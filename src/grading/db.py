@@ -6,7 +6,9 @@ final report read and nothing in between does.
 
 Ingest writes scans, pages, crops, assignments, questions and submissions.
 Read, score and verify (pipeline.py) write readings, judgments, scores,
-api_calls, batches and the review queue. Review writes rulings.
+api_calls, batches and the review queue. Review writes rulings, corrections
+and blank confirmations, and places unplaced pages. The report writes reports
+and reported (tracking ids only: the names it joins stay in its PDFs).
 
 The schema changes only by migration: SCHEMA is version 1 as session 3 left
 it, and MIGRATIONS[n] takes a database from version n - 1 to n.
@@ -15,7 +17,7 @@ it, and MIGRATIONS[n] takes a database from version n - 1 to n.
 import sqlite3
 from pathlib import Path
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -235,6 +237,41 @@ CREATE VIEW review_groups AS
     SELECT assignment, question, normalized_answer, min(priority) AS priority, count(*) AS n
     FROM review_queue WHERE resolved_at IS NULL
     GROUP BY assignment, question, normalized_answer;
+""",
+    # Review and the reports.
+    3: """
+-- The reading a ruling was made on, as shown in review (rulings are keyed by
+-- its normalized form).
+ALTER TABLE rulings ADD COLUMN reading TEXT;
+
+-- A reading fixed by hand in review. It replaces the read pass's reading for
+-- this crop in every later run, and needs no verify call.
+CREATE TABLE corrections (
+    crop_id    INTEGER PRIMARY KEY REFERENCES crops(id),
+    reading    TEXT NOT NULL,
+    normalized TEXT NOT NULL,
+    decided_at TEXT NOT NULL
+);
+
+-- How a review item was closed: settled (a ruling, a correction or a
+-- confirmed blank made it final) or decided (a score for this crop alone).
+ALTER TABLE review_queue ADD COLUMN resolution TEXT;
+
+-- Every report written, and which submissions each final one covered. A
+-- report covers the submissions no earlier final report has.
+CREATE TABLE reports (
+    id         INTEGER PRIMARY KEY,
+    run_date   TEXT NOT NULL,
+    folder     TEXT NOT NULL,           -- relative to the data folder
+    partial    INTEGER NOT NULL CHECK (partial IN (0, 1)),
+    created_at TEXT NOT NULL
+);
+CREATE TABLE reported (
+    report_id   INTEGER NOT NULL REFERENCES reports(id),
+    tracking_id TEXT NOT NULL,
+    assignment  TEXT NOT NULL,
+    PRIMARY KEY (report_id, tracking_id, assignment)
+);
 """,
 }
 

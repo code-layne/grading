@@ -1,18 +1,23 @@
 """grading [--config FILE] ingest [--received YYYY-MM-DD] [PDF ...]
 grading [--config FILE] status
 grading [--config FILE] read [--assignment ID] [--record DIR | --replay DIR] [--yes] [--no-wait]
-grading [--config FILE] eval [--set DIR] [--workdir DIR] [--record DIR | --replay DIR | --fake] [--yes]"""
+grading [--config FILE] eval [--set DIR] [--workdir DIR] [--record DIR | --replay DIR | --fake] [--yes]
+grading [--config FILE] review [--port N] [--no-browser]
+grading [--config FILE] report [--assignment ID ...] [--all] [--partial]"""
 
 import argparse
 import datetime as dt
 import sys
 from pathlib import Path
 
-from . import config, costs, db, evaluate
+from . import config, costs, db, evaluate, report
 from .apiclient import AnthropicTransport, ApiError, RecordingTransport, ReplayTransport
 from .ingest import ingest_file, ingest_inbox
 from .manifests import ManifestError, ManifestIndex
 from .pipeline import Cancelled, CostRefused, Pipeline, ask
+from .report import ReportError
+from .review import ReviewError
+from .roster import RosterError
 from .rubrics import RubricError
 
 
@@ -143,6 +148,40 @@ def cmd_eval(cfg, args):
     return 0
 
 
+def cmd_review(cfg, args):
+    from .webapp import serve
+    if not cfg.database.exists():
+        print(f"nothing ingested yet ({cfg.database} does not exist)")
+        return 0
+    serve(cfg, port=args.port, open_browser=not args.no_browser)
+    return 0
+
+
+def cmd_report(cfg, args):
+    if not cfg.database.exists():
+        print(f"nothing ingested yet ({cfg.database} does not exist)")
+        return 1
+    conn = db.connect(cfg.database)
+    try:
+        out = report.run(cfg, conn, assignments=args.assignment, everything=args.all, partial=args.partial)
+    finally:
+        conn.close()
+    rep = out["report"]
+    # Tracking ids and counts only: the names stay in the report folder.
+    print(f"report: {out['folder']}")
+    for f in out["files"]:
+        print(f"  {f.name}")
+    listed = sum(len(s.students) for s in rep.sections)
+    print(f"{len(rep.run)} submissions, {len(rep.assignments)} assignments "
+          f"({', '.join(a['assignment'] for a in rep.assignments)}), {listed} students listed")
+    for a, b in rep.blocked.items():
+        print(f"partial: {a} has {b['review']} items in review and {b['ungraded']} not graded yet; "
+              "they are not counted")
+    if rep.unknown:
+        print(f"not in roster-map.csv: {', '.join(rep.unknown)}")
+    return 0
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="grading")
     ap.add_argument("--config", help="config file (default $GRADING_CONFIG, then ~/.config/grading/config.toml)")
@@ -171,13 +210,23 @@ def main(argv=None):
     p.add_argument("--fake", action="store_true",
                    help="answer from expected-scores.csv with injected faults instead of the API")
     calls(p)
+    p = sub.add_parser("review", help="the review queue and the unplaced pages, on localhost")
+    p.add_argument("--port", type=int, default=5005)
+    p.add_argument("--no-browser", action="store_true", help="don't open a browser window")
+    p = sub.add_parser("report", help="scores, feedback sheets and the summary, with names (reads the roster)")
+    p.add_argument("--assignment", action="append", help="only this assignment (repeatable)")
+    p.add_argument("--all", action="store_true", help="every submission, including ones already reported")
+    p.add_argument("--partial", action="store_true",
+                   help="report even while items are in review; they are left out and marked")
     args = ap.parse_args(argv)
     if getattr(args, "fake", False) and args.replay:
         ap.error("--fake and --replay both say where answers come from; pick one")
     try:
         cfg = config.load(args.config)
-        return {"ingest": cmd_ingest, "status": cmd_status, "read": cmd_read, "eval": cmd_eval}[args.command](cfg, args)
-    except (config.ConfigError, ManifestError, RubricError, ApiError, CostRefused) as e:
+        return {"ingest": cmd_ingest, "status": cmd_status, "read": cmd_read, "eval": cmd_eval,
+                "review": cmd_review, "report": cmd_report}[args.command](cfg, args)
+    except (config.ConfigError, ManifestError, RubricError, ApiError, CostRefused, RosterError,
+            ReportError, ReviewError) as e:
         print(f"grading: {e}", file=sys.stderr)
         return 1
     except Cancelled as e:

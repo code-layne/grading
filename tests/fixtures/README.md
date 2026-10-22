@@ -38,6 +38,8 @@ with the corrected item 7 labels. It has:
 - `scan-pages.csv`, the ground truth for which student is on each scan page
 - `expected-scores.csv`, whose one `blank` row is the only box ingest should
   mark blank
+- `fake-roster.csv`, the eval set's invented roster (algebra_2 main), in
+  roster-map.csv's format: the report tests' roster
 - `curriculum/.../manifest.json`, from `make -C unit03/lesson01 graded_sample`
 - `curriculum/unit03/lesson01/rubrics/alg2-u3-l1-gs-gs8.yaml`, the gs8
   rubric the manifest names, from algebra_2 5a04b10
@@ -46,7 +48,7 @@ To refresh after the eval set is regenerated:
 
 ```sh
 E=~/Mathematics/algebra_2/unit03/lesson01/graded_sample/eval
-cp $E/class-set-scan.pdf $E/scan-pages.csv $E/expected-scores.csv tests/fixtures/synthetic/
+cp $E/class-set-scan.pdf $E/scan-pages.csv $E/expected-scores.csv $E/fake-roster.csv tests/fixtures/synthetic/
 cp ~/Mathematics/algebra_2/target/unit03/lesson01/grading/graded_sample/manifest.json \
    tests/fixtures/synthetic/curriculum/target/unit03/lesson01/grading/graded_sample/
 cp ~/Mathematics/algebra_2/unit03/lesson01/rubrics/alg2-u3-l1-gs-gs8.yaml \
@@ -63,5 +65,6 @@ After a prompt changes, the replay reports which requests no longer match the
 recording; record again to refresh it.
 
 `.gitignore` ignores every PDF and CSV except the ones under
-`tests/fixtures/`. It always ignores `roster-map.csv`, here too: ingest never
-reads the roster, so the tests don't need one.
+`tests/fixtures/`. It always ignores `roster-map.csv`, here too; the report
+tests copy `synthetic/fake-roster.csv` to a roster-map.csv in a temporary
+folder.

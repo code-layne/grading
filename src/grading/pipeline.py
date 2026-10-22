@@ -14,6 +14,14 @@ and ends with a proposed score and, unless it is plainly settled, a row in
 review_queue. A choice or short item is settled only when both readings
 match with high confidence. Every rubric item goes to review in this phase.
 
+Review's decisions are inputs here like any other: a ruling for the item's
+normalized answer settles it (no verify call, no review), a reading fixed by
+hand (corrections) replaces the read pass's reading and needs no verify
+call, and a confirmed blank scores zero. A score review set for one crop
+alone (source 'review') is never recomputed. So the scores and the queue are
+always what these inputs give, and review settles items by calling
+settle() rather than writing scores itself.
+
 The work runs in rounds: each round sends every call whose inputs exist
 (round 1 the reads, round 2 the rubric calls and the choice and short
 verifies, round 3 the rubric verifies). A run over more than
@@ -37,8 +45,8 @@ from .manifests import ManifestError
 
 TERMINAL = {"refusal", "truncated", "no-tool-call", "invalid"}  # retrying won't help
 PRIORITY = {"verify-disagreement": 0, "illegible": 1, "unparseable": 1, "not-a-letter": 1, "not-a-number": 1,
-            "read-failed": 1, "rubric-failed": 1, "verify-failed": 1, "low-confidence": 2, "rubric": 3,
-            "blank": 4}
+            "read-failed": 1, "rubric-failed": 1, "verify-failed": 1, "reading-corrected": 1,
+            "low-confidence": 2, "rubric": 3, "blank": 4}
 
 
 class CostRefused(Exception):
@@ -142,6 +150,15 @@ class Pipeline:
              "failed": {}}
         s["groups"] = {(r["assignment"], r["question"], r["normalized_answer"]): r
                        for r in s["judgments"].values() if r["pass"] == "rubric"}
+        # A reading fixed in review stands in for the read pass's own.
+        s["corrected"] = set()
+        for r in c.execute("SELECT * FROM corrections"):
+            model = s["readings"].get((r["crop_id"], "read"))
+            s["readings"][(r["crop_id"], "read")] = {
+                "crop_id": r["crop_id"], "pass": "read", "reading": r["reading"], "latex": None,
+                "confidence": "high", "illegible": 0, "model": "review", "normalized": r["normalized"],
+                "original": model["reading"] if model is not None else None}
+            s["corrected"].add(r["crop_id"])
         for r in c.execute("SELECT request_key, status FROM api_calls ORDER BY id"):
             s["failed"][r["request_key"]] = r["status"] if r["status"] != "ok" else None
         # The last rubric call for each group of identical answers.
@@ -152,6 +169,10 @@ class Pipeline:
                            "WHERE a.call_type = 'rubric' ORDER BY a.id"):
             s["group_status"][(r["assignment"], r["question"], r["normalized"])] = r["status"]
         return s
+
+    def _no_verify(self, it, s, first) -> bool:
+        """A reading fixed by hand or a score from a ruling needs no second opinion."""
+        return it.crop_id in s["corrected"] or first.get("source") == "ruling"
 
     def _blocked(self, key, s):
         """True when this call should not be sent now."""
@@ -209,7 +230,7 @@ class Pipeline:
             first = self.first_score(it, s)
             key = request_key("verify", it)
             if (first["points"] is not None and (it.crop_id, "verify") not in s["readings"]
-                    and not self._blocked(key, s)):
+                    and not self._no_verify(it, s, first) and not self._blocked(key, s)):
                 out.append(("verify", it, key))
         return out
 
@@ -248,7 +269,8 @@ class Pipeline:
                                          not in s["groups"]):
                 todo.append(("rubric", prompts.rubric_request(api, it.q, self.rubric(it), png, reading, ttl),
                              api.est_rubric_output_tokens))
-            if (it.crop_id, "verify") not in s["readings"]:
+            if (it.crop_id, "verify") not in s["readings"] and not (
+                    r is not None and self._no_verify(it, s, self.first_score(it, s))):
                 rub = self.rubric(it) if it.qtype == "rubric" else None
                 first = dict(placeholder, reading=reading, points=it.q["points"],
                              criteria={str(c["id"]): c["points"] for c in rub.criteria} if rub else None)
@@ -452,7 +474,8 @@ class Pipeline:
         r = s["readings"].get((it.crop_id, "read"))
         if r is None:
             return it.needs_read and not self._blocked(request_key("read", it), s)
-        return not r["illegible"] and (it.crop_id, "verify") not in s["readings"]
+        return (not r["illegible"] and (it.crop_id, "verify") not in s["readings"]
+                and not self._no_verify(it, s, self.first_score(it, s)))
 
     def _guard(self, est, n_crops):
         api = self.cfg.api
@@ -489,6 +512,22 @@ class Pipeline:
                            "model": r["model"]}}
         if first.get("criteria_detail"):
             detail["criteria"] = first["criteria_detail"]
+        settled = dict(reading=r["reading"], normalized=r["normalized"], detail=detail, verify_points=None,
+                       verify_reading=None)
+        if it.crop_id in s["corrected"]:
+            detail["corrected_from"] = r["original"]
+            if first["points"] is None:
+                # A rubric answer fixed by hand with no ruling and no rubric
+                # score for it yet: review scores it (or the next run's call).
+                base.update(settled, reasons=["reading-corrected"])
+                return base
+            reasons = ["rubric"] if first.get("source") == "rubric" else []
+            base.update(settled, points=first["points"], source=first.get("source"),
+                        feedback=first.get("feedback"), reasons=reasons)
+            return base
+        if first.get("source") == "ruling":
+            base.update(settled, points=first["points"], source="ruling", feedback=first.get("feedback"))
+            return base
         reasons = []
         if first["points"] is None:
             if first["reason"] is None:
@@ -529,11 +568,19 @@ class Pipeline:
                     normalized=r["normalized"])
         return base
 
+    def settle(self, assignment=None) -> Summary:
+        """Recompute scores and the queue from what is stored, sending nothing:
+        what review calls after each decision."""
+        return self._finish(self.items(assignment), Summary())
+
     def _finish(self, items, summary) -> Summary:
         s = self._state()
         now = _now()
+        decided = {r[0] for r in self.conn.execute("SELECT crop_id FROM scores WHERE source = 'review'")}
         with self.conn:
             for it in items:
+                if it.crop_id in decided:
+                    continue
                 d = self.decide(it, s)
                 if d is None:
                     summary.waiting += 1
@@ -552,8 +599,8 @@ class Pipeline:
                      d["feedback"], now, it.crop_id, d.get("normalized"), status, json.dumps(d["detail"])))
                 if status == "final":
                     summary.final += 1
-                    self.conn.execute("DELETE FROM review_queue WHERE crop_id = ? AND resolved_at IS NULL",
-                                      (it.crop_id,))
+                    self.conn.execute("UPDATE review_queue SET resolved_at = ?, resolution = 'settled' "
+                                      "WHERE crop_id = ? AND resolved_at IS NULL", (now, it.crop_id))
                     continue
                 summary.in_review += 1
                 for reason in d["reasons"]:
@@ -566,8 +613,8 @@ class Pipeline:
                     "normalized_answer = excluded.normalized_answer, reading = excluded.reading, "
                     "verify_reading = excluded.verify_reading, points = excluded.points, "
                     "verify_points = excluded.verify_points, feedback = excluded.feedback, "
-                    "detail = excluded.detail, created_at = excluded.created_at "
-                    "WHERE review_queue.resolved_at IS NULL",
+                    "detail = excluded.detail, created_at = excluded.created_at, resolved_at = NULL, "
+                    "resolution = NULL",
                     (it.crop_id, it.tracking_id, it.assignment, it.question, it.qtype, json.dumps(d["reasons"]),
                      min(PRIORITY[x] for x in d["reasons"]), d.get("normalized"), d.get("reading"),
                      d.get("verify_reading"), d["points"], d.get("verify_points"), it.q["points"], d["feedback"],

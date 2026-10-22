@@ -6,9 +6,45 @@ Precalculus, SAAR). The plan is `grading-system-design.md` in
 build side (`\gradedblank`, `manifest.json`, personalized packets) lives there
 too.
 
-This repository is the pipeline that runs on the Mac. So far it covers steps 3
-to 7 of the design's pipeline: scanning, ingest, read, score and verify.
-Review and the reports come next.
+This repository is the pipeline that runs on the Mac: steps 3 to 9 of the
+design's pipeline, from scanning to the score report and the feedback sheets.
+Start with [Grading a class set](#grading-a-class-set).
+
+## Grading a class set
+
+From a stack of packets to stapled feedback sheets:
+
+1. **Scan** the stack on the copier (300 dpi, one PDF, duplex if printed
+   double-sided) to the inbox. Order and orientation don't matter.
+2. **Ingest**: `grading ingest`. Pass `--received 2026-10-20` if the papers
+   came in on another day. It prints how many pages were placed; anything
+   unplaced waits for step 5.
+3. **Read, score and verify**: `grading read`. It shows the number of calls
+   and the estimated cost and asks before sending anything. A class set goes
+   through the Batch API, usually within the hour; `--no-wait` lets you walk
+   away, and running `grading read` again collects it.
+4. **Review**: `grading review` opens the queue in the browser. Work down it
+   with the keyboard (`?` shows the keys): approve with `a`, change a score
+   with `s`, fix a misread answer with `r`, edit the feedback note with `f`,
+   and confirm the blank batch at the end. Each approval is a ruling, so the
+   same answer from any other student, now or later, is scored the same way.
+5. **Unplaced pages** (`u` in review): for a page whose QR code couldn't be
+   read, find it in the paper stack (`grading status` names the scan file
+   and page), look up the student's tracking id in roster-map.csv, and place
+   it. Then run `grading read` again to grade it.
+6. **Report**: `grading report`. It refuses while anything is still in
+   review; `--partial` reports anyway and marks what it left out. It writes
+   `<data>/reports/<date>/`.
+7. **Enter scores** in the Blackbaud gradebook from `scores.pdf` (or
+   `scores.csv`), check the misses in `summary.pdf`, then **print**
+   `feedback-sheets-<section>.pdf` and staple each sheet to its packet. The
+   sheets are in gradebook order, the order `grading.mk` printed the packets
+   in.
+
+**Late papers** go through the same steps. Scan them alone or mixed into
+another stack; rulings from the class set score their matching answers
+without review, and the next `grading report` lists only the students whose
+papers are new.
 
 ## Setup
 
@@ -25,7 +61,7 @@ Edit the config:
 | `paths.curricula` | The course checkouts. Ingest finds each assignment's `manifest.json` in their build output. |
 | `paths.inbox` | Where scan-to-PDF lands. Each PDF moves to `<inbox>/ingested/` once it is ingested. |
 | `paths.data` | `grading.sqlite`, the page images and the crops |
-| `paths.roster` | `roster-map.csv`. Only the report step will read it, and ingest never does. |
+| `paths.roster` | `roster-map.csv`. Only `grading report` reads it. |
 | `[ingest]` | Thresholds; the defaults are explained in `config.example.toml` |
 | `[api]` | Models, effort, the batch threshold, the cost ceiling |
 | `[prices]` | Dollars per million tokens, for the estimate and the report |
@@ -150,9 +186,9 @@ item is plainly settled, a row in `review_queue`:
 | A blank box, until confirmed | 4 |
 
 A choice or short item is final only when both readings match with high
-confidence. Review (session 4b) works through `review_queue` grouped by
-question and normalized answer (the `review_groups` view has the counts) and
-saves its decisions as rulings. A rerun never overwrites a score whose
+confidence. A ruling for the item's normalized answer settles it with no
+verify call and no review, and so does a reading fixed in review (the fixed
+reading is scored like any other). A rerun never overwrites a score whose
 source is `review`.
 
 **Prompt caching.** The stable part of each prompt comes first and carries
@@ -182,6 +218,104 @@ replaced by its SHA-256) and response to `DIR/calls/<request id>.json`.
 reports any request that has changed since the recording (a prompt or a
 crop). `grading read --record` refuses a folder inside a git work tree: a
 recording of real papers holds student work.
+
+## Review
+
+```sh
+grading review                       # http://127.0.0.1:5005/, opens the browser
+grading review --port 5050 --no-browser
+```
+
+A Flask page on localhost. The queue is grouped by question, then by answer
+group (identical normalized answers) with a count, in this order:
+
+1. Disagreements, answers with no score (illegible, unparseable, a failed
+   call) and low-confidence readings
+2. Rubric items
+3. The blank batch to confirm
+
+Each group shows every crop in it with its tracking id, the reading (and the
+verify pass's reading and verdict), the key, the proposed score, the rubric
+evidence criterion by criterion next to the verify pass's scores, and the
+feedback note.
+
+| Key | Does |
+| --- | --- |
+| `j` `k` | next and previous group |
+| `h` `l` | previous and next crop in the group |
+| `a` | approve: save a ruling with the proposed score and the feedback as shown |
+| `s` | type a score, `Enter` approves with it |
+| `f` | edit the feedback note, `Ctrl`/`⌘ Enter` approves |
+| `r` | fix the highlighted crop's reading, `Enter` saves it |
+| `v` | take the verify pass's reading for the highlighted crop |
+| `x` | in the blank batch: this box has writing |
+| `u` `q` | unplaced pages, back to the queue |
+
+- **A ruling** is keyed by question and normalized answer (`rulings`). It
+  scores every matching answer at once, including ones already final, and
+  every matching answer in later runs, late papers included, with no call
+  and no review.
+- **A fixed reading** (`corrections`) applies to that crop only. The crop
+  is then scored by its corrected answer: by a ruling if there is one, in
+  code for choice and short items, and otherwise it waits in a group of its
+  own for a score.
+- **No reading** (illegible, a failed call): there is nothing to rule on, so
+  fix the reading or type a score for that crop alone (source `review`).
+- **Blanks**: `a` confirms the batch (zero points). A box marked with `x`
+  goes back to `grading read`.
+- **Unplaced pages**: choose the assignment, page and tracking id (the page
+  lists who has other pages of the assignment but not that one). The stored
+  page is aligned by its registration marks and cropped like any other; a
+  page whose marks can't be found must be rescanned. A second copy of a page
+  already placed is stored as a duplicate. `d` dismisses a page that isn't a
+  student's.
+
+No names appear anywhere in the review app. Students are tracking ids, and
+an unplaced page is shown by scan number, not file name (a file name might
+hold one). The server listens on 127.0.0.1 only, refuses other host names,
+and takes changes only as JSON with a token made at startup.
+
+Every decision is stored as an input (a ruling, a correction, a confirmed
+blank) and the scores and the queue are recomputed from the inputs, the same
+code `grading read` runs. So review, a later `grading read` and the report
+always agree.
+
+## Reports
+
+```sh
+grading report                       # everything not in an earlier report
+grading report --assignment alg2-u3-l1-gs
+grading report --all                 # every submission again
+grading report --partial             # even with items in review
+```
+
+This is the only command that reads `roster-map.csv`. It writes a folder
+named for the run date, `<data>/reports/2026-10-22/` (`-2`, `-3` for a
+second report that day), with every file mode 600:
+
+| File | What it holds |
+| --- | --- |
+| `scores.pdf` | One table per section: students in gradebook order (last name) by legal name, one column per assignment in the run, cells `earned/possible`, empty when no pages came in |
+| `scores.csv` | The same, with earned and possible in separate columns (a spreadsheet would read `7/12` as a date) |
+| `feedback-sheets-<section>.pdf` | A sheet per student and assignment, in gradebook order: preferred and last name, the assignment, the total, one row per question with points and any feedback note |
+| `summary.pdf` | Score distribution, miss rate per question with the student count, common wrong answers (two or more students) with counts, students with no pages received |
+
+**The run.** A report covers every submission no earlier report covered. If
+an assignment in it has never been reported, every student in the sections
+it touches is listed, with empty cells for those with no pages. A report of
+late papers alone lists only their students. A cell marked `†` is missing a
+page; its items count zero.
+
+**Refusals.** While any item of an assignment in the run is in review, or
+crops are not graded yet, `grading report` refuses and says how many.
+`--partial` writes the report anyway, counts only settled items, marks the
+cells left short with `*`, and doesn't count as covering anything, so the
+next full report still includes them.
+
+The database records the report folder and the tracking ids each report
+covered, never a name, and the terminal shows tracking ids only. Students in
+the scans but not in roster-map.csv are listed by tracking id in a "Not in
+roster" table.
 
 ## Eval
 
@@ -213,6 +347,7 @@ rubric score a point high), as the tests do.
 grading.sqlite
 pages/<scan sha>/<NNN>.png               aligned, strip-blanked, thresholded
 crops/<assignment>/<tracking id>/<q>.png thresholded answer boxes
+reports/<date>/                          the reports: the only files with names
 ```
 
 The SQLite schema is in `src/grading/db.py`. Student records are keyed by
@@ -221,7 +356,9 @@ tracking id, and no table has a name column. The tables are `scans`, `pages`,
 against), and `submissions` (dates received, which never change a score).
 Read, score and verify write `readings` (both passes), `judgments` (rubric
 scores and verify verdicts), `scores`, `review_queue`, `api_calls` (every call
-with its tokens) and `batches`. Review will write `rulings`. The schema
+with its tokens) and `batches`. Review writes `rulings`, `corrections` and
+`crops.blank_confirmed`, and places unplaced pages. The report writes
+`reports` and `reported` (tracking ids only). The schema
 changes only by migration (`db.MIGRATIONS`); an older database is migrated
 when it is opened.
 
@@ -266,6 +403,35 @@ pytest
 - **The live transport**, through the real SDK against a mocked HTTP layer:
   strict tools, `tool_choice` auto, the cache breakpoint, the refusal
   fallback, batch submission and results; and the Keychain lookup.
+- **Review** (`test_review.py`, `test_webapp.py`), on the class set graded
+  by the fake client:
+  - the queue's order: disagreements and low confidence, then rubric items
+    by answer group (the shared gs8 answer is one group of two), then the
+    one blank batch;
+  - approving saves a ruling that scores every matching answer, including
+    ones already final, and a rerun sends nothing for them;
+  - a fixed reading is scored by code and survives a rerun with no verify
+    call; a fixed rubric reading waits in its own group for a score;
+  - blanks confirm to zero; a blank with writing goes back to `grading read`;
+  - an unplaced page placed by hand is aligned, cropped and graded; a second
+    copy becomes a duplicate; bad ids, pages and assignments are refused;
+  - a late paper (462HAN's page, its QR code damaged) placed by hand gets
+    the class set's gs8 ruling with no rubric call, verify call or review;
+  - the page renders every group and the unplaced queue, takes changes only
+    with its token and on localhost, and shows no name from the roster,
+    which it is never allowed to read.
+- **Reports** (`test_report.py`), with algebra_2's `fake-roster.csv`:
+  - refusal while items are in review; `--partial` marks and doesn't cover;
+  - every student's total matches `expected-scores.csv` (with the one
+    injected rubric fault approved as proposed), in gradebook order even
+    from a shuffled roster;
+  - the PDFs carry the invented names (score table order, one sheet per
+    student with name, total and feedback), and no file written outside the
+    report folder holds one, the database included, nor does the terminal;
+  - a class report lists the missing student with an empty cell and under
+    "no pages received"; after her late page, the next report lists only her;
+  - tracking ids not in the roster are listed apart; only `report.py` reads
+    the roster.
 - **Code scoring** (`test_checks.py`), **the schema migration**, the CLI.
 - **Duplicates, re-ingest, the inbox, config validation** (paths inside a
   git work tree are refused), **the schema** (no name columns) and

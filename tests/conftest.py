@@ -1,4 +1,5 @@
 import csv
+import datetime as dt
 from pathlib import Path
 
 import cv2
@@ -112,3 +113,87 @@ def class_set(ingested, tmp_path):
     c = db.connect(cfg.database)
     yield cfg, c
     c.close()
+
+
+FAKE_ROSTER = SYNTHETIC / "fake-roster.csv"
+
+
+def fake_run(cfg, conn, transport=None):
+    """Read, score and verify against the fake client."""
+    from grading.fake import FakeTransport
+    from grading.pipeline import Pipeline
+    transport = transport or FakeTransport(EXPECTED)
+    summary = Pipeline(cfg, conn, transport, out=lambda *a: None, sleep=lambda s: None).run()
+    return summary, transport
+
+
+def review_all(review, fixes=None):
+    """Work through the whole queue the way a teacher would: confirm the
+    blanks, transcribe what has no reading (fixes: {tracking id: reading}),
+    and approve every proposed score."""
+    fixes = fixes or {}
+    while True:
+        groups = review.groups()
+        if not groups:
+            return
+        key = groups[0]["key"]
+        g = review.group(key)
+        if key == ["blanks"]:
+            review.confirm_blanks([i["crop_id"] for i in g["items"]])
+        elif g["individual"]:
+            it = g["items"][0]
+            review.correct(it["crop_id"], fixes[it["tracking_id"]])
+        else:
+            review.approve(key)
+
+
+@pytest.fixture
+def graded(class_set):
+    """The synthetic class set, read, scored and verified by the fake client."""
+    cfg, conn = class_set
+    fake_run(cfg, conn)
+    return cfg, conn
+
+
+def roster_names():
+    """Every name in the fake roster, in the forms a report could write."""
+    names = set()
+    for r in read_csv(FAKE_ROSTER):
+        last, first = (p.strip() for p in r["legal_name"].split(",", 1))
+        names |= {r["legal_name"], last, first, r["preferred_name"]}
+    return names
+
+
+LATE = "462HAN"     # scan page 2 of the class set; shares its gs8 answer with BKTRTN
+
+
+@pytest.fixture
+def late_paper(tmp_path):
+    """The class set without 462HAN's page, graded and reviewed; then
+    462HAN's page arrives late with a damaged QR code."""
+    import pymupdf
+    from grading.fake import DEFAULT_FAULTS
+    from grading.ingest import ingest_file
+    from grading.review import Review
+    from test_synthetic import damage_qr
+    cfg = synthetic_cfg(tmp_path)
+    src = SYNTHETIC / "class-set-scan.pdf"
+    first = tmp_path / "class-set.pdf"
+    with pymupdf.open(src) as orig, pymupdf.open() as doc:
+        doc.insert_pdf(orig, from_page=0, to_page=0)
+        doc.insert_pdf(orig, from_page=2)
+        doc.save(first)
+    late = tmp_path / "late.pdf"
+    damaged, _ = damage_qr(page_image(src, 1), cfg.ingest.ink_threshold)
+    with pymupdf.open() as doc:
+        gray_to_pdf_page(doc, damaged)
+        doc.save(late)
+    conn = db.connect(cfg.database)
+    assert ingest_file(cfg, first, conn, received_on=dt.date(2026, 10, 20)).count("placed") == 11
+    fake_run(cfg, conn)
+    review_all(Review(cfg, conn), {DEFAULT_FAULTS["illegible"][0]: "2"})
+    res = ingest_file(cfg, late, conn, received_on=dt.date(2026, 10, 23))
+    (page,) = res.pages
+    assert page.status == "unplaced" and page.reason == "qr-unreadable"
+    yield cfg, conn, page.page_id
+    conn.close()
