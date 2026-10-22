@@ -1,5 +1,5 @@
 """The config file: where the curricula, the scan inbox, the data folder and
-roster-map.csv live, and the ingest thresholds.
+roster-map.csv live, the ingest thresholds, the models and the API prices.
 
     grading --config ~/.config/grading/config.toml ingest
 
@@ -38,6 +38,61 @@ class IngestSettings:
     max_mark_residual_px: float = 6.0
 
 
+EFFORTS = ("low", "medium", "high", "xhigh", "max")
+
+
+@dataclass
+class ApiSettings:
+    # One model transcribes the crops; the other scores rubrics and runs the
+    # verify pass. Both default to the docs' general recommendation.
+    read_model: str = "claude-opus-5-5"
+    judge_model: str = "claude-opus-5-5"
+    # output_config.effort. Opus 5.5 always thinks; effort sets how much.
+    read_effort: str = "low"
+    judge_effort: str = "medium"
+    read_max_tokens: int = 4096
+    judge_max_tokens: int = 8192
+    # A run over more crops than this goes through the Batch API (half price,
+    # asynchronous); smaller runs use the standard Messages API.
+    batch_threshold: int = 20
+    batch_poll_seconds: int = 30
+    # A live run whose estimate is above this many dollars is refused.
+    max_run_usd: float = 10.0
+    # Standard calls only (the Batch API rejects it): a request the model's
+    # safety classifier declines is retried server-side on the fallback model
+    # the API picks. The model that answered is recorded with each reading.
+    refusal_fallback: bool = True
+    keychain_service: str = "anthropic-grading"
+    max_retries: int = 4
+    # Output tokens (thinking included) assumed per call by the cost estimate.
+    est_read_output_tokens: int = 800
+    est_rubric_output_tokens: int = 2500
+    est_verify_output_tokens: int = 1200
+
+
+@dataclass
+class Price:
+    """US dollars per million tokens."""
+    input: float
+    output: float
+    cache_write_5m: float
+    cache_write_1h: float
+    cache_read: float
+
+
+# platform.claude.com/docs/en/about-claude/pricing, read 2026-10-22. The
+# Batch API is 50% off every line; the discount stacks with cache pricing.
+DEFAULT_PRICES = {
+    "claude-opus-5-5": Price(4.00, 20.00, 5.00, 8.00, 0.20),
+    "claude-sonnet-5-5": Price(2.00, 10.00, 2.50, 4.00, 0.10),
+    "claude-haiku-5-5": Price(0.10, 0.50, 0.125, 0.20, 0.01),  # prompts up to 100k tokens
+    # Where a declined Opus 5.5 request can fall back to.
+    "claude-opus-5": Price(5.00, 25.00, 6.25, 10.00, 0.50),
+    "claude-opus-4-8": Price(5.00, 25.00, 6.25, 10.00, 0.50),
+}
+BATCH_DISCOUNT = 0.5
+
+
 @dataclass
 class Config:
     curricula: list[Path]
@@ -45,6 +100,8 @@ class Config:
     data: Path
     roster: Path
     ingest: IngestSettings = field(default_factory=IngestSettings)
+    api: ApiSettings = field(default_factory=ApiSettings)
+    prices: dict[str, Price] = field(default_factory=lambda: dict(DEFAULT_PRICES))
     source: Path | None = None
 
     @property
@@ -79,6 +136,17 @@ def load(path: str | os.PathLike | None = None) -> Config:
     return from_dict(raw, base=path.parent, source=path)
 
 
+def _settings(target, raw: dict, section: str):
+    known = target.__dataclass_fields__
+    for key, value in raw.items():
+        if key not in known:
+            raise ConfigError(f"unknown setting {section}.{key}")
+        kind = type(getattr(target, key))
+        if kind is bool and not isinstance(value, bool):
+            raise ConfigError(f"{section}.{key} must be true or false")
+        setattr(target, key, kind(value))
+
+
 def from_dict(raw: dict, base: Path = Path("."), source: Path | None = None) -> Config:
     paths = raw.get("paths", {})
     missing = [k for k in ("curricula", "inbox", "data", "roster") if k not in paths]
@@ -94,11 +162,16 @@ def from_dict(raw: dict, base: Path = Path("."), source: Path | None = None) -> 
         roster=_path(paths["roster"], "roster", base),
         source=source,
     )
-    known = IngestSettings.__dataclass_fields__
-    for key, value in raw.get("ingest", {}).items():
-        if key not in known:
-            raise ConfigError(f"unknown setting ingest.{key}")
-        setattr(cfg.ingest, key, type(getattr(cfg.ingest, key))(value))
+    _settings(cfg.ingest, raw.get("ingest", {}), "ingest")
+    _settings(cfg.api, raw.get("api", {}), "api")
+    for key in ("read_effort", "judge_effort"):
+        if getattr(cfg.api, key) not in EFFORTS:
+            raise ConfigError(f"api.{key} must be one of {', '.join(EFFORTS)}")
+    for model, entry in raw.get("prices", {}).items():
+        fields = Price.__dataclass_fields__
+        if not isinstance(entry, dict) or set(entry) != set(fields):
+            raise ConfigError(f"prices.{model} needs exactly {', '.join(fields)}")
+        cfg.prices[model] = Price(**{k: float(v) for k, v in entry.items()})
 
     # Scans, crops and the database never go near a repository: scans carry
     # student names, and the roster pairs names with tracking ids.

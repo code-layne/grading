@@ -35,3 +35,36 @@ def test_gitignore_keeps_scans_crops_databases_and_csvs_out():
     for p in ["tests/fixtures/real/grading_scan.pdf", "tests/fixtures/synthetic/expected-scores.csv",
               "src/grading/scan.py", "config.example.toml"]:
         assert not ignored(p), p
+
+
+def test_version_1_database_is_migrated_in_place(tmp_path):
+    import sqlite3
+
+    from grading import db
+    path = tmp_path / "grading.sqlite"
+    old = sqlite3.connect(path)
+    old.executescript(db.SCHEMA)
+    old.execute("INSERT INTO meta VALUES ('schema_version', '1')")
+    old.execute("INSERT INTO rulings VALUES ('a', 'q1', '3/2', 1, NULL, '2026-10-20')")
+    old.commit()
+    old.close()
+
+    conn = db.connect(path)
+    assert conn.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()[0] == str(db.SCHEMA_VERSION)
+    tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type IN ('table', 'view')")}
+    assert {"judgments", "api_calls", "batches", "review_queue", "review_groups"} <= tables
+    assert {"request_key", "normalized"} <= {c["name"] for c in conn.execute("PRAGMA table_info(readings)")}
+    assert {"crop_id", "status", "detail"} <= {c["name"] for c in conn.execute("PRAGMA table_info(scores)")}
+    assert conn.execute("SELECT count(*) FROM rulings").fetchone()[0] == 1
+    conn.close()
+    db.connect(path).close()  # connecting again changes nothing
+
+
+def test_newer_database_is_refused(tmp_path):
+    from grading import db
+    conn = db.connect(tmp_path / "g.sqlite")
+    conn.execute("UPDATE meta SET value = '99' WHERE key = 'schema_version'")
+    conn.commit()
+    conn.close()
+    with pytest.raises(RuntimeError, match="newer"):
+        db.connect(tmp_path / "g.sqlite")

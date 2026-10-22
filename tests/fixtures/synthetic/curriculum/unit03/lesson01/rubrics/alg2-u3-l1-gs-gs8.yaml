@@ -1,0 +1,28 @@
+# Rubric for graded_sample item 8 (Unit 3, Lesson 3.1). manifest.json points
+# here as rubrics/alg2-u3-l1-gs-gs8.yaml, relative to this lesson directory.
+id: gs8
+points: 4
+task: >-
+  Maya simplified (3x^2 + 2x - 5) - (x^2 - 4x + 1) as
+  3x^2 + 2x - 5 - x^2 - 4x + 1 = 2x^2 - 2x - 4. Name the step where she went
+  wrong, explain what she should have done there, and give the correct answer.
+criteria:
+  - id: step
+    points: 1
+    full: Names the step where the parentheses were removed (the first line) as where the error happened.
+  - id: reason
+    points: 1
+    full: >-
+      Explains that subtracting a polynomial subtracts every term, so every sign
+      in x^2 - 4x + 1 must change, not only the first one.
+  - id: corrected
+    points: 1
+    full: Shows the corrected step, 3x^2 + 2x - 5 - x^2 + 4x - 1 (or the terms -x^2 + 4x - 1).
+  - id: answer
+    points: 1
+    full: Gives the correct result, 2x^2 + 6x - 6.
+examples:
+  - response: "She forgot to distribute the negative to all the terms. It should be 2x^2 + 6x - 6."
+    scores: {step: 0, reason: 1, corrected: 0, answer: 1}
+  - response: "The answer is 2x^2 - 2x - 4 because you combine like terms."
+    scores: {step: 0, reason: 0, corrected: 0, answer: 0}

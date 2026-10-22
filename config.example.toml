@@ -24,3 +24,49 @@ speck_px = 40
 blank_ink_px = 80
 crop_margin_pt = 6.0
 max_mark_residual_px = 6.0
+
+[api]
+# Model ids from platform.claude.com/docs/en/about-claude/models/overview.
+# One model transcribes; the other scores rubric items and runs the verify pass.
+read_model = "claude-opus-5-5"
+judge_model = "claude-opus-5-5"
+# output_config.effort: low, medium, high, xhigh or max. Opus 5.5 always
+# thinks; effort sets how much (and how many output tokens a call bills).
+read_effort = "low"
+judge_effort = "medium"
+read_max_tokens = 4096
+judge_max_tokens = 8192
+# A run over more crops than this goes through the Batch API (half price,
+# usually done within the hour). Smaller runs use the standard API.
+batch_threshold = 20
+batch_poll_seconds = 30
+# A live run estimated above this many dollars is refused outright.
+max_run_usd = 10.0
+# Standard calls only: a request the safety classifier declines is retried
+# server-side on a fallback model (beta server-side-fallback-2026-07-01).
+refusal_fallback = true
+# The Keychain item holding the API key (else $ANTHROPIC_API_KEY).
+keychain_service = "anthropic-grading"
+max_retries = 4
+# Output tokens per call that the cost estimate assumes (thinking included).
+# Tune them from the token report of `grading eval`.
+est_read_output_tokens = 800
+est_rubric_output_tokens = 2500
+est_verify_output_tokens = 1200
+
+# Dollars per million tokens, from platform.claude.com/docs/en/about-claude/pricing
+# (read 2026-10-22). The Batch API takes 50% off every line. These are built
+# in; a [prices."model"] table here replaces one, or adds a model.
+[prices."claude-opus-5-5"]
+input = 4.00
+output = 20.00
+cache_write_5m = 5.00
+cache_write_1h = 8.00
+cache_read = 0.20
+
+[prices."claude-sonnet-5-5"]
+input = 2.00
+output = 10.00
+cache_write_5m = 2.50
+cache_write_1h = 4.00
+cache_read = 0.10

@@ -81,3 +81,34 @@ def gray_to_pdf_page(doc, gray):
     assert ok
     page = doc.new_page(width=612, height=792)
     page.insert_image(page.rect, stream=png.tobytes())
+
+
+EXPECTED = SYNTHETIC / "expected-scores.csv"
+
+
+def synthetic_cfg(root):
+    cfg = config.from_dict({"paths": {
+        "curricula": [str(SYNTHETIC / "curriculum")], "inbox": str(root / "inbox"),
+        "data": str(root / "data"), "roster": str(root / "roster-map.csv")}})
+    cfg.api.batch_poll_seconds = 0
+    return cfg
+
+
+@pytest.fixture(scope="session")
+def ingested(tmp_path_factory):
+    """The synthetic class set, ingested once; class_set copies it per test."""
+    from grading.ingest import ingest_file
+    root = tmp_path_factory.mktemp("ingested")
+    result = ingest_file(synthetic_cfg(root), SYNTHETIC / "class-set-scan.pdf")
+    assert result.count("placed") == 12
+    return root
+
+
+@pytest.fixture
+def class_set(ingested, tmp_path):
+    import shutil
+    shutil.copytree(ingested / "data", tmp_path / "data")
+    cfg = synthetic_cfg(tmp_path)
+    c = db.connect(cfg.database)
+    yield cfg, c
+    c.close()
