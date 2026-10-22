@@ -126,9 +126,11 @@ def test_rulings_apply_before_review(class_set):
     cfg, conn = class_set
     tyme = next(r for r in read_csv(EXPECTED) if r["tracking_id"] == "TYME2T" and r["item"] == "gs8")
     with conn:
-        conn.execute("INSERT INTO rulings VALUES (?, 'gs7', ?, 1, 'Check the second exponent.', '2026-10-21')",
+        conn.execute("INSERT INTO rulings (assignment, question, normalized_answer, points, feedback, decided_at) "
+                     "VALUES (?, 'gs7', ?, 1, 'Check the second exponent.', '2026-10-21')",
                      (ASSIGNMENT, checks.normalize("short", "6, 3")))
-        conn.execute("INSERT INTO rulings VALUES (?, 'gs8', ?, 1, 'Which step?', '2026-10-21')",
+        conn.execute("INSERT INTO rulings (assignment, question, normalized_answer, points, feedback, decided_at) "
+                     "VALUES (?, 'gs8', ?, 1, 'Which step?', '2026-10-21')",
                      (ASSIGNMENT, checks.normalize("rubric", tyme["response"])))
     faults = {k: v for k, v in DEFAULT_FAULTS.items() if k != "rubric_off_by_one"}
     s, t = run(cfg, conn, FakeTransport(EXPECTED, faults))
@@ -138,6 +140,8 @@ def test_rulings_apply_before_review(class_set):
         row = score(conn, r["tracking_id"], "gs7")
         assert (row["points"], row["source"], row["status"]) == (1, "ruling", "final")
         assert row["feedback"] == "Check the second exponent."
+        # A ruling settles the item: no verify call, no review.
+        assert f"verify-{ASSIGNMENT}-{r['tracking_id']}-gs7" not in t.store["requests"]
     # The rubric ruling replaces the rubric call and the review.
     assert not any("TYME2T" in k for k in t.store["requests"] if k.startswith("rubric-"))
     row = score(conn, "TYME2T", "gs8")
