@@ -1,7 +1,7 @@
 """Talking to the Claude API, or to a recording of it.
 
 A transport sends one request (`create`) or a batch of them (`batch_submit`,
-`batch_status`, `batch_results`) and hands back plain dicts shaped like the
+`batch_status`, `batch_results`, `batch_cancel`) and hands back plain dicts shaped like the
 API's own JSON, so the pipeline never cares which transport it has:
 
   AnthropicTransport  the live API through the Anthropic Python SDK
@@ -105,6 +105,11 @@ class Transport:
         """Yields an Outcome per request, in any order."""
         raise NotImplementedError
 
+    def batch_cancel(self, batch_id: str) -> dict:
+        """Asks for the batch to stop. It goes to canceling, then ends; the
+        requests that never ran come back as canceled (and are not billed)."""
+        raise NotImplementedError
+
 
 class AnthropicTransport(Transport):
     live = True
@@ -149,6 +154,10 @@ class AnthropicTransport(Transport):
 
     def batch_status(self, batch_id):
         b = self._call(self.client.messages.batches.retrieve, batch_id)
+        return {"status": b.processing_status, "counts": b.request_counts.to_dict()}
+
+    def batch_cancel(self, batch_id):
+        b = self._call(self.client.messages.batches.cancel, batch_id)
         return {"status": b.processing_status, "counts": b.request_counts.to_dict()}
 
     def batch_results(self, batch_id):
@@ -210,6 +219,9 @@ class RecordingTransport(Transport):
 
     def batch_status(self, batch_id):
         return self.inner.batch_status(batch_id)
+
+    def batch_cancel(self, batch_id):
+        return self.inner.batch_cancel(batch_id)
 
     def batch_results(self, batch_id):
         for out in self.inner.batch_results(batch_id):

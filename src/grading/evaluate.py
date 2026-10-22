@@ -33,14 +33,15 @@ def eval_config(cfg, set_dir: Path, workdir: Path):
 
 
 def run(cfg, transport, set_dir: Path = DEFAULT_SET, workdir: Path | None = None, *, confirm=None,
-        out=print, force_mode=None) -> dict:
+        out=print, force_mode=None, on_wait=()) -> dict:
     set_dir = Path(set_dir)
     ecfg = eval_config(cfg, set_dir, Path(workdir))
     scan = set_dir / "class-set-scan.pdf"
     conn = db.connect(ecfg.database)
     try:
         ingest_file(ecfg, scan, conn)
-        summary = Pipeline(ecfg, conn, transport, confirm=confirm, out=out, force_mode=force_mode).run()
+        summary = Pipeline(ecfg, conn, transport, confirm=confirm, out=out, force_mode=force_mode,
+                           on_wait=on_wait).run()
         report = compare(ecfg, conn, set_dir / "expected-scores.csv")
         report["mode"] = summary.mode
         report["waiting"] = summary.waiting

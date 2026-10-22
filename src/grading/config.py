@@ -53,7 +53,8 @@ class ApiSettings:
     read_max_tokens: int = 4096
     judge_max_tokens: int = 8192
     # A run over more crops than this goes through the Batch API (half price,
-    # asynchronous); smaller runs use the standard Messages API.
+    # within 24 hours); smaller runs use the standard Messages API. --now and
+    # --batch override it for one run.
     batch_threshold: int = 20
     batch_poll_seconds: int = 30
     # A live run whose estimate is above this many dollars is refused.

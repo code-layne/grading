@@ -19,10 +19,13 @@ From a stack of packets to stapled feedback sheets:
 2. **Ingest**: `grading ingest`. Pass `--received 2026-10-20` if the papers
    came in on another day. It prints how many pages were placed; anything
    unplaced waits for step 5.
-3. **Read, score and verify**: `grading read`. It shows the number of calls
-   and the estimated cost and asks before sending anything. A class set goes
-   through the Batch API, usually within the hour; `--no-wait` lets you walk
-   away, and running `grading read` again collects it.
+3. **Read, score and verify**: `grading read --now` when you are waiting on
+   the results. It shows the number of calls, which API they go through and
+   the estimated cost, and asks before sending anything. Without `--now` a
+   class set goes through the Batch API at half price, which Anthropic
+   promises only within 24 hours (see [Which API](#which-api)): use that for
+   a set that can run overnight, with `--no-wait` to walk away, and run
+   `grading read` again to collect it.
 4. **Review**: `grading review` opens the queue in the browser. Work down it
    with the keyboard (`?` shows the keys): approve with `a`, change a score
    with `s`, fix a misread answer with `r`, edit the feedback note with `f`,
@@ -139,7 +142,10 @@ carry names. They stay in `<inbox>/ingested/` until you delete them.
 ```sh
 grading read                         # every crop on a placed page not graded yet
 grading read --assignment alg2-u3-l1-gs
+grading read --now                   # the standard API, whatever the run's size: results as they come
+grading read --batch                 # the Batch API even for a small run: half price, up to 24 hours
 grading read --no-wait               # submit a batch and exit; rerun to collect it
+grading batch cancel                 # stop a batch still running; then `grading read --now`
 grading read --record ~/Grading/recordings/2026-10-22
 grading read --replay ~/Grading/recordings/2026-10-22
 grading status                       # adds: scored final, to review, batches running
@@ -196,9 +202,24 @@ the cache breakpoint: the instructions and, for rubric and verify calls, the
 question's key or rubric. A class shares one cached prefix per question; the
 crop and anything about one student come after it.
 
-**Batches.** A run over more than `api.batch_threshold` crops (default 20)
-goes through the Batch API at half price; smaller runs use the standard API.
-The work runs in rounds (the reads; then the rubric calls and the choice and
+**Which API.** `--now` sends a run through the standard API whatever its
+size, and `--batch` sends it through the Batch API however small; they can't
+be combined. With neither, a run over more than `api.batch_threshold` crops
+(default 20) goes through the Batch API and smaller runs use the standard
+API.
+
+The two trade money for time. The standard API answers each call as it is
+made, so a class set is done in minutes. The Batch API costs half as much,
+but the [Batch API docs](https://platform.claude.com/docs/en/build-with-claude/batch-processing)
+promise only that a batch finishes within 24 hours: "most batches completing
+within 1 hour", but a batch "can take up to 24 hours to complete", and a
+request still waiting after 24 hours comes back `expired` (not billed; the
+next run sends it again). The first live run sat in the queue for over two
+hours at 0 of 95 done. So use `--now` for any run you are waiting on, and
+the Batch API (the default for a class set, or `--batch`) for a run that can
+go overnight, with `--no-wait`.
+
+**Batches.** The work runs in rounds (the reads; then the rubric calls and the choice and
 short verifies; then the rubric verifies), one batch per round. The batch id
 is stored in `batches`, so if the command is interrupted, or run with
 `--no-wait`, the next `grading read` collects that batch instead of
@@ -206,9 +227,42 @@ submitting again. Everything is stored as it arrives, so a rerun only sends
 what is still missing. A refused or malformed response is not retried; a
 transient error (overloaded, expired) is retried on the next run.
 
+**Waiting on a batch.** While a run waits on a batch it prints a line each
+time the count changes, and at least every 5 minutes even when it hasn't,
+with the time since the batch was submitted:
+
+```
+batch msgbatch_01HT…: in_progress, 0 of 95 done, 2h 04m
+```
+
+The first of those lines says that Ctrl-C is safe (the batch keeps running
+on Anthropic's side and its id is stored) and gives the exact command that
+picks it up again: the same command, with `--workdir` added for an eval.
+`grading status` lists every batch still running and how long ago it was
+submitted.
+
+**Canceling.** `grading batch cancel` cancels the batch still running for the
+data folder (`--workdir DIR` for an eval's), waits for it to end (usually
+seconds) and stores every result that came in before the cancel. The batch
+is marked `canceled` in `batches`, and each request that never ran is
+recorded as canceled, which is not billed and is sent again by the next run.
+So after a batch has sat in the queue too long:
+
+```sh
+# Ctrl-C the waiting `grading read`, then
+grading batch cancel
+grading read --now                   # sends only what never got a result
+```
+
+`grading read --now` refuses while a batch is still running, rather than
+paying for its requests twice, and says to cancel it first. A batch that has
+already ended is collected as usual.
+
 **Cost guard.** Before a live run, `grading read` and `grading eval` print the
-number of calls and an estimated cost by call type, and ask before sending
-anything (`--yes` skips the question). A run estimated above
+number of calls, the API the run will use, and an estimated cost by call type
+priced for that API (half for the Batch API), with what the run would cost
+through the other one (`with --now: about $…` or `with --batch: about $…`).
+They ask before sending anything (`--yes` skips the question). A run estimated above
 `api.max_run_usd` is refused outright. The estimate assumes no cache hits and
 counts a rubric call per crop, so a real run should come in under it.
 
@@ -324,6 +378,7 @@ grading eval                         # the synthetic class set, live
 grading eval --record tests/fixtures/recordings/synthetic
 grading eval --replay tests/fixtures/recordings/synthetic
 grading eval --fake                  # offline: answers from expected-scores.csv
+grading eval --now                   # the standard API instead of a batch
 ```
 
 `grading eval` ingests the synthetic class set (`tests/fixtures/synthetic`)
@@ -335,7 +390,9 @@ tokens and dollars by call type. An item with no proposed score (illegible,
 unparseable) is counted apart from agreements and disagreements. The report
 is also written to `eval-report.json` in the workdir. If an eval is
 interrupted while a batch runs, rerun it with `--workdir` set to the same
-folder: it collects the batch and carries on.
+folder: it collects the batch and carries on. `grading batch cancel --workdir
+DIR` cancels that batch instead, and `grading eval --workdir DIR --now` then
+sends the rest.
 
 `--fake` answers from `expected-scores.csv` with four injected faults (one
 illegible crop, one low-confidence reading, one verify disagreement, one
@@ -395,6 +452,22 @@ pytest
   - `x = 3/2` scores as 3/2; an unparseable reading gets no score;
   - a refusal goes to review and isn't retried, a transient error is;
   - an interrupted batch is collected on the next run, not resubmitted;
+  - `--now` and `--batch` override the threshold either way, and the cost
+    guard names the API, prices the run for it and shows the other API's
+    price;
+  - each poll line shows the time since submission (`2h 04m`), a quiet batch
+    still gets a line every 5 minutes (even with a longer poll interval), and
+    the first line alone carries the Ctrl-C note and the exact command to
+    resume, for `read` and for an eval's workdir;
+  - `--now` refuses while a batch is still running and sends nothing, and
+    collects one that has ended;
+  - `grading batch cancel` keeps the results that came in, marks the batch
+    canceled, and `--now` then sends exactly the requests that never ran,
+    ending with the same scores as an uncanceled run; a batch that had
+    already ended is just collected; an interrupted cancel is finished by the
+    next run; a run waiting on a batch canceled from another terminal stops
+    instead of submitting the next round; Ctrl-C while waiting exits cleanly
+    and the rerun collects the batch;
   - a rerun sends nothing and keeps review decisions.
 - **Record and replay**: a recorded run replays to the same report with no
   API client created; a changed prompt is flagged.
@@ -402,7 +475,8 @@ pytest
   and the ceiling.
 - **The live transport**, through the real SDK against a mocked HTTP layer:
   strict tools, `tool_choice` auto, the cache breakpoint, the refusal
-  fallback, batch submission and results; and the Keychain lookup.
+  fallback, batch submission, results (canceled ones included) and cancel;
+  and the Keychain lookup.
 - **Review** (`test_review.py`, `test_webapp.py`), on the class set graded
   by the fake client:
   - the queue's order: disagreements and low confidence, then rubric items
@@ -432,7 +506,8 @@ pytest
     "no pages received"; after her late page, the next report lists only her;
   - tracking ids not in the roster are listed apart; only `report.py` reads
     the roster.
-- **Code scoring** (`test_checks.py`), **the schema migration**, the CLI.
+- **Code scoring** (`test_checks.py`), **the schema migrations** (a version 3
+  database keeps its batches and can mark them canceled), the CLI.
 - **Duplicates, re-ingest, the inbox, config validation** (paths inside a
   git work tree are refused), **the schema** (no name columns) and
   **`.gitignore`**.

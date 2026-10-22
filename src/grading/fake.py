@@ -46,8 +46,10 @@ def criteria_of(row) -> dict:
 
 class FakeTransport(Transport):
     def __init__(self, expected_csv: Path, faults: dict | None = None, *, live=False, store=None,
-                 polls_before_end=1, overrides=None, refuse=(), fail_once=()):
+                 polls_before_end=1, overrides=None, refuse=(), fail_once=(), ran_before_cancel=0):
         """overrides: {(tracking id, question): reading} for both passes.
+        ran_before_cancel: how many of a batch's requests had run when it was
+        canceled; the rest come back canceled.
         refuse: {(tracking id, question, call type)} answered with a refusal.
         fail_once: the same, answered with a transient error the first time."""
         self.expected = load_expected(expected_csv)
@@ -65,6 +67,7 @@ class FakeTransport(Transport):
         self.store.setdefault("requests", [])
         self.store.setdefault("failed_once", set())
         self.polls_before_end = polls_before_end
+        self.ran_before_cancel = ran_before_cancel
 
     def _is(self, fault, meta):
         return self.faults.get(fault) == (meta["tracking_id"], meta["question"])
@@ -154,10 +157,25 @@ class FakeTransport(Transport):
         b = self.store["batches"][batch_id]
         b["polls"] += 1
         n = len(b["items"])
+        if "ran" in b:  # canceled: canceling for one poll, then ended
+            if b["polls"] > b["canceled_at_poll"] + 1:
+                return {"status": "ended", "counts": {"processing": 0, "succeeded": b["ran"],
+                                                      "canceled": n - b["ran"]}}
+            return {"status": "canceling", "counts": {"processing": n - b["ran"], "succeeded": b["ran"]}}
         if b["polls"] > self.polls_before_end:
             return {"status": "ended", "counts": {"processing": 0, "succeeded": n}}
         return {"status": "in_progress", "counts": {"processing": n, "succeeded": 0}}
 
+    def batch_cancel(self, batch_id):
+        b = self.store["batches"][batch_id]
+        b.update(ran=min(self.ran_before_cancel, len(b["items"])), canceled_at_poll=b["polls"])
+        self.store.setdefault("canceled", []).append(batch_id)
+        return {"status": "canceling", "counts": {"processing": len(b["items"]) - b["ran"], "succeeded": b["ran"]}}
+
     def batch_results(self, batch_id):
-        for key, params, meta in self.store["batches"][batch_id]["items"]:
-            yield self._outcome(key, params, meta, "batch", batch_id)
+        b = self.store["batches"][batch_id]
+        for i, (key, params, meta) in enumerate(b["items"]):
+            if "ran" in b and i >= b["ran"]:
+                yield Outcome(key, None, "canceled", mode="batch", batch_id=batch_id)
+            else:
+                yield self._outcome(key, params, meta, "batch", batch_id)

@@ -241,3 +241,173 @@ def test_light_pencil_blank_is_read(class_set):
     s, _ = run(cfg, conn, FakeTransport(EXPECTED, overrides={("6VVV2P", "gs5"): "3x^3 + 4x^2 - 5x - 4"}))
     assert s.calls["read"] == 96
     assert score(conn, "6VVV2P", "gs5")["points"] == 2
+
+
+# ---- waiting on a batch, --now and grading batch cancel ---------------------
+
+def test_elapsed_reads_as_hours_and_minutes():
+    from grading.pipeline import elapsed
+    assert elapsed(0) == "0m" and elapsed(59) == "0m" and elapsed(12 * 60 + 30) == "12m"
+    assert elapsed(2 * 3600 + 4 * 60 + 10) == "2h 04m" and elapsed(-5) == "0m"
+
+
+class Clock:
+    """A clock that moves only when the pipeline sleeps."""
+
+    def __init__(self):
+        import datetime as dt
+        self.now = dt.datetime.now().replace(microsecond=0)
+        self.slept = []
+
+    def __call__(self):
+        return self.now
+
+    def sleep(self, seconds):
+        import datetime as dt
+        self.slept.append(seconds)
+        self.now += dt.timedelta(seconds=seconds)
+
+
+def test_poll_lines_show_elapsed_time_at_least_every_five_minutes(class_set):
+    cfg, conn = class_set
+    cfg.api.batch_poll_seconds = 30
+    clock, lines = Clock(), []
+    # 25 polls of 30 s with no change in the count: a quiet 12 minutes.
+    Pipeline(cfg, conn, FakeTransport(EXPECTED, polls_before_end=25), out=lines.append, sleep=clock.sleep,
+             clock=clock, on_wait=["Ctrl-C is safe: `grading read` picks it up."]).run()
+    first = [line for line in lines if "msgbatch_fake001" in line and "done" in line]
+    assert first == ["batch msgbatch_fake001: in_progress, 0 of 95 done, 0m",
+                     "batch msgbatch_fake001: in_progress, 0 of 95 done, 5m",
+                     "batch msgbatch_fake001: in_progress, 0 of 95 done, 10m"]
+    # The resume hint comes with the first poll line, once per run.
+    i = lines.index(first[0])
+    assert lines[i + 1] == "  Ctrl-C is safe: `grading read` picks it up."
+    assert sum("Ctrl-C" in line for line in lines) == 1
+
+
+def test_a_long_poll_interval_still_prints_every_five_minutes(class_set):
+    cfg, conn = class_set
+    cfg.api.batch_poll_seconds = 3600
+    clock, lines = Clock(), []
+    Pipeline(cfg, conn, FakeTransport(EXPECTED, polls_before_end=3), out=lines.append, sleep=clock.sleep,
+             clock=clock).run()
+    assert set(clock.slept) == {300}
+    assert [line.rsplit(", ", 1)[1] for line in lines if "msgbatch_fake001" in line and "done" in line] == [
+        "0m", "5m", "10m"]
+
+
+def test_elapsed_time_counts_from_submission_across_runs(class_set):
+    import datetime as dt
+    cfg, conn = class_set
+    store = {}
+    run(cfg, conn, FakeTransport(EXPECTED, store=store, polls_before_end=100), wait=False)
+    conn.execute("UPDATE batches SET submitted_at = ?",
+                 ((dt.datetime.now() - dt.timedelta(hours=2, minutes=4, seconds=20)).isoformat(timespec="seconds"),))
+    conn.commit()
+    lines = []
+    Pipeline(cfg, conn, FakeTransport(EXPECTED, store=store, polls_before_end=100), out=lines.append,
+             wait=False).run()
+    assert "batch msgbatch_fake001: in_progress, 0 of 95 done, 2h 04m" in lines
+
+
+def test_now_never_waits_on_a_batch_still_running(class_set):
+    import pytest
+    from grading.pipeline import BatchPending
+    cfg, conn = class_set
+    store = {}
+    run(cfg, conn, FakeTransport(EXPECTED, store=store, polls_before_end=100), wait=False)
+    with pytest.raises(BatchPending) as e:
+        run(cfg, conn, FakeTransport(EXPECTED, store=store, polls_before_end=100), force_mode="standard")
+    assert e.value.batch_id == "msgbatch_fake001" and e.value.status == "in_progress"
+    # Nothing was sent twice, and the batch is still there to cancel or collect.
+    assert store["submissions"] == 1 and store["requests"] == []
+    assert conn.execute("SELECT status FROM batches").fetchone()[0] == "in_progress"
+
+
+def test_now_collects_a_batch_that_has_ended_then_carries_on(class_set):
+    cfg, conn = class_set
+    store = {}
+    run(cfg, conn, FakeTransport(EXPECTED, store=store, polls_before_end=1), wait=False)
+    s, _ = run(cfg, conn, FakeTransport(EXPECTED, store=store), force_mode="standard")
+    assert store["submissions"] == 1 and s.waiting == 0
+    assert conn.execute("SELECT count(*) FROM api_calls WHERE mode = 'batch'").fetchone()[0] == 95
+    assert conn.execute("SELECT count(*) FROM api_calls WHERE mode = 'standard' AND call_type = 'read'"
+                        ).fetchone()[0] == 0
+
+
+def test_cancel_keeps_what_ran_and_now_sends_only_the_rest(class_set):
+    cfg, conn = class_set
+    store = {}
+    run(cfg, conn, FakeTransport(EXPECTED, store=store, polls_before_end=100), wait=False)
+    lines = []
+    done = Pipeline(cfg, conn, FakeTransport(EXPECTED, store=store, polls_before_end=100, ran_before_cancel=40),
+                    out=lines.append, sleep=lambda s: None).cancel_batches()
+    assert done == [{"id": "msgbatch_fake001", "status": "canceled", "results": 40, "canceled": 55}]
+    assert store["canceled"] == ["msgbatch_fake001"] and "canceling batch msgbatch_fake001" in lines
+    row = conn.execute("SELECT * FROM batches").fetchone()
+    assert row["status"] == "canceled" and row["canceled_at"] and row["collected_at"]
+    assert conn.execute("SELECT count(*) FROM readings WHERE pass = 'read'").fetchone()[0] == 40
+    never_ran = {r[0] for r in conn.execute("SELECT request_key FROM api_calls WHERE status = 'canceled'")}
+    assert len(never_ran) == 55
+
+    s, _ = run(cfg, conn, FakeTransport(EXPECTED, store=store), force_mode="standard")
+    assert store["submissions"] == 1 and s.mode == "standard"
+    sent = {r[0] for r in conn.execute("SELECT request_key FROM api_calls WHERE mode = 'standard' "
+                                       "AND call_type = 'read'")}
+    assert sent == never_ran
+    reads = conn.execute("SELECT count(*), count(DISTINCT request_key) FROM api_calls "
+                         "WHERE call_type = 'read' AND status = 'ok'").fetchone()
+    assert tuple(reads) == (95, 95)
+    # The same outcome as a run that was never canceled.
+    assert s.waiting == 0 and s.final == 80 and s.in_review == 16
+
+
+def test_cancel_of_a_batch_that_already_ended_just_collects_it(class_set):
+    cfg, conn = class_set
+    store = {}
+    run(cfg, conn, FakeTransport(EXPECTED, store=store, polls_before_end=1), wait=False)
+    done = Pipeline(cfg, conn, FakeTransport(EXPECTED, store=store), out=lambda *a: None,
+                    sleep=lambda s: None).cancel_batches()
+    assert done == [{"id": "msgbatch_fake001", "status": "collected", "results": 95, "canceled": 0}]
+    assert "canceled" not in store
+
+
+def test_an_interrupted_cancel_is_finished_by_the_next_run(class_set):
+    import pytest
+    from grading.pipeline import BatchPending
+    cfg, conn = class_set
+    store = {}
+    fake = FakeTransport(EXPECTED, store=store, polls_before_end=100, ran_before_cancel=10)
+    run(cfg, conn, fake, wait=False)
+    # Canceled, then interrupted before the batch ended.
+    fake.batch_cancel("msgbatch_fake001")
+    conn.execute("UPDATE batches SET status = 'canceling'")
+    conn.commit()
+    with pytest.raises(BatchPending) as e:  # still canceling: --now won't wait on it
+        run(cfg, conn, fake, force_mode="standard")
+    assert e.value.status == "canceling"
+    s, _ = run(cfg, conn, fake, force_mode="standard")
+    assert conn.execute("SELECT status FROM batches").fetchone()[0] == "canceled"
+    assert conn.execute("SELECT count(*) FROM api_calls WHERE mode = 'standard' AND call_type = 'read'"
+                        ).fetchone()[0] == 85
+    assert s.waiting == 0
+
+
+def test_a_run_waiting_on_a_batch_canceled_elsewhere_stops_without_resubmitting(class_set):
+    cfg, conn = class_set
+    store = {}
+
+    class CanceledElsewhere(FakeTransport):
+        def batch_status(self, batch_id):
+            if self.store["batches"][batch_id]["polls"] == 2 and "ran" not in self.store["batches"][batch_id]:
+                self.batch_cancel(batch_id)   # `grading batch cancel` in another terminal
+                conn.execute("UPDATE batches SET status = 'canceling'")
+                conn.commit()
+            return super().batch_status(batch_id)
+
+    lines = []
+    s = Pipeline(cfg, conn, CanceledElsewhere(EXPECTED, store=store, polls_before_end=100, ran_before_cancel=30),
+                 out=lines.append, sleep=lambda s: None).run()
+    assert store["submissions"] == 1 and "batch msgbatch_fake001 was canceled; stopping here" in lines
+    assert conn.execute("SELECT status FROM batches").fetchone()[0] == "canceled"
+    assert s.calls["read"] == 95 and s.waiting > 0

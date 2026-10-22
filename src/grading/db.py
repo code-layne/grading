@@ -17,7 +17,7 @@ it, and MIGRATIONS[n] takes a database from version n - 1 to n.
 import sqlite3
 from pathlib import Path
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -272,6 +272,25 @@ CREATE TABLE reported (
     assignment  TEXT NOT NULL,
     PRIMARY KEY (report_id, tracking_id, assignment)
 );
+""",
+    # grading batch cancel. SQLite can't change a CHECK, so batches is rebuilt.
+    4: """
+-- A batch is in_progress until it ends and its results are collected, or
+-- canceling from `grading batch cancel` until it ends and is canceled: the
+-- results that came in before the cancel are stored, and the requests that
+-- never ran are sent again by the next run.
+CREATE TABLE batches_v4 (
+    id           TEXT PRIMARY KEY,
+    submitted_at TEXT NOT NULL,
+    request_keys TEXT NOT NULL,
+    status       TEXT NOT NULL CHECK (status IN ('in_progress', 'canceling', 'collected', 'canceled')),
+    collected_at TEXT,
+    canceled_at  TEXT
+);
+INSERT INTO batches_v4 (id, submitted_at, request_keys, status, collected_at)
+    SELECT id, submitted_at, request_keys, status, collected_at FROM batches;
+DROP TABLE batches;
+ALTER TABLE batches_v4 RENAME TO batches;
 """,
 }
 

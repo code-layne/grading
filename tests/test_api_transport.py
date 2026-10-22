@@ -44,10 +44,14 @@ class Server:
                          request_counts=dict(BATCH["request_counts"], processing=0, succeeded=1, errored=1),
                          results_url="https://api.anthropic.com/v1/messages/batches/msgbatch_01/results")
             return httpx2.Response(200, json=ended)
+        if path == "/v1/messages/batches/msgbatch_01/cancel" and request.method == "POST":
+            return httpx2.Response(200, json=dict(BATCH, processing_status="canceling",
+                                                  cancel_initiated_at="2026-10-22T14:04:00Z"))
         if path == "/v1/messages/batches/msgbatch_01/results":
             lines = [{"custom_id": "read-b", "result": {"type": "errored", "error": {
                          "type": "error", "error": {"type": "overloaded_error", "message": "Overloaded"}}}},
-                     {"custom_id": "read-a", "result": {"type": "succeeded", "message": MESSAGE}}]
+                     {"custom_id": "read-a", "result": {"type": "succeeded", "message": MESSAGE}},
+                     {"custom_id": "read-c", "result": {"type": "canceled"}}]
             return httpx2.Response(200, text="\n".join(json.dumps(x) for x in lines),
                                    headers={"content-type": "application/x-jsonl"})
         return httpx2.Response(404, json={"type": "error", "error": {"type": "not_found_error", "message": path}})
@@ -115,6 +119,19 @@ def test_batch_submit_status_and_results(server):
     assert results["read-a"].message["usage"]["cache_read_input_tokens"] == 900
     assert results["read-a"].mode == "batch" and results["read-a"].batch_id == "msgbatch_01"
     assert results["read-b"].message is None and results["read-b"].error.startswith("errored")
+    assert results["read-c"].message is None and results["read-c"].error == "canceled"
+
+
+def test_batch_cancel_goes_out_as_documented(server):
+    st = transport(server).batch_cancel("msgbatch_01")
+    (req,) = server.requests
+    assert req.method == "POST" and req.url.path == "/v1/messages/batches/msgbatch_01/cancel"
+    assert st["status"] == "canceling" and st["counts"]["processing"] == 2
+
+
+def test_recording_passes_a_cancel_through(server, tmp_path):
+    rec = RecordingTransport(transport(server), tmp_path / "rec")
+    assert rec.batch_cancel("msgbatch_01")["status"] == "canceling"
 
 
 def test_api_errors_become_messages(server):

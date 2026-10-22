@@ -36,8 +36,9 @@ read_effort = "low"
 judge_effort = "medium"
 read_max_tokens = 4096
 judge_max_tokens = 8192
-# A run over more crops than this goes through the Batch API (half price,
-# usually done within the hour). Smaller runs use the standard API.
+# A run over more crops than this goes through the Batch API (half price, but
+# promised only within 24 hours). Smaller runs use the standard API. --now and
+# --batch override this for one run.
 batch_threshold = 20
 batch_poll_seconds = 30
 # A live run estimated above this many dollars is refused outright.
