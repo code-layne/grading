@@ -1,0 +1,38 @@
+# Scans, crops, page images and databases carry student work, and scans carry
+# names. They live in the data folder and the inbox, outside this repository;
+# these rules stop a stray copy from being committed.
+*.pdf
+*.png
+*.jpg
+*.jpeg
+*.tif
+*.tiff
+*.heic
+*.sqlite
+*.sqlite3
+*.sqlite-journal
+*.sqlite-wal
+*.db
+*.db-journal
+*.csv
+*.xls
+*.xlsx
+data/
+inbox/
+crops/
+scans/
+
+# Test fixtures: invented students only (see tests/fixtures/README.md).
+!tests/fixtures/**/*.pdf
+!tests/fixtures/**/*.csv
+
+# roster-map.csv pairs names with tracking ids: never, not even as a fixture.
+roster-map.csv
+
+# Python
+__pycache__/
+*.egg-info/
+.pytest_cache/
+.venv/
+build/
+dist/

@@ -1,0 +1,158 @@
+{
+  "assignment": "alg2-u3-l1-gs",
+  "course": "algebra_2",
+  "pages": 1,
+  "questions": [
+    {
+      "id": "gs1",
+      "type": "choice",
+      "points": 1,
+      "answer": "A",
+      "page": 1,
+      "box": [
+        211.11,
+        547.72,
+        32.4,
+        25.2
+      ]
+    },
+    {
+      "id": "gs2",
+      "type": "choice",
+      "points": 1,
+      "answer": "C",
+      "page": 1,
+      "box": [
+        440.22,
+        547.72,
+        32.4,
+        25.2
+      ]
+    },
+    {
+      "id": "gs3",
+      "type": "choice",
+      "points": 1,
+      "answer": "E",
+      "page": 1,
+      "box": [
+        211.11,
+        520.04,
+        32.4,
+        25.2
+      ]
+    },
+    {
+      "id": "gs4",
+      "type": "choice",
+      "points": 1,
+      "answer": "G",
+      "page": 1,
+      "box": [
+        440.22,
+        520.04,
+        32.4,
+        25.2
+      ]
+    },
+    {
+      "id": "gs5",
+      "type": "short",
+      "points": 2,
+      "answer": "3x^3 + 4x^2 - 5x - 4",
+      "check": "expression",
+      "page": 1,
+      "box": [
+        356.4,
+        413.44,
+        201.6,
+        32.4
+      ]
+    },
+    {
+      "id": "gs6",
+      "type": "short",
+      "points": 1,
+      "answer": "3/2",
+      "check": "numeric",
+      "tolerance": 0.01,
+      "page": 1,
+      "box": [
+        464.4,
+        364.11,
+        93.6,
+        32.4
+      ]
+    },
+    {
+      "id": "gs7",
+      "type": "short",
+      "points": 2,
+      "answer": "5, 3",
+      "check": "set",
+      "page": 1,
+      "box": [
+        442.8,
+        297.2,
+        115.2,
+        32.4
+      ]
+    },
+    {
+      "id": "gs8",
+      "type": "rubric",
+      "points": 4,
+      "rubric": "rubrics/alg2-u3-l1-gs-gs8.yaml",
+      "page": 1,
+      "box": [
+        71.93,
+        98.91,
+        486.07,
+        93.6
+      ]
+    }
+  ],
+  "paper": [
+    612,
+    792
+  ],
+  "strip": [
+    54,
+    756,
+    504,
+    26
+  ],
+  "marks": {
+    "tl": [
+      21,
+      764,
+      12,
+      12
+    ],
+    "tr": [
+      579,
+      764,
+      12,
+      12
+    ],
+    "bl": [
+      21,
+      60,
+      12,
+      12
+    ],
+    "br": [
+      579,
+      60,
+      12,
+      12
+    ]
+  },
+  "qr": [
+    566,
+    720,
+    32,
+    32
+  ],
+  "key": false
+}

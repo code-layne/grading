@@ -1,0 +1,26 @@
+# Copy to ~/.config/grading/config.toml (or point $GRADING_CONFIG at it).
+# The inbox, the data folder and roster-map.csv must be outside every git
+# work tree: grading refuses to start otherwise.
+
+[paths]
+# Curriculum checkouts. Ingest finds each assignment's manifest.json in their
+# build output (target/<unit>/<lesson>/grading/<component>/manifest.json).
+curricula = ["~/Mathematics/algebra_2"]
+# Copier scan-to-PDF lands here. Ingested PDFs move to <inbox>/ingested/.
+inbox = "~/Grading/inbox"
+# The database (grading.sqlite), strip-blanked page images and crops.
+data = "~/Grading/data"
+# Names <-> tracking ids. Only the report step reads it; ingest never does.
+roster = "~/Rosters/algebra2/roster-map.csv"
+
+[ingest]
+dpi = 300
+# Gray level (0-255) below which a pixel is ink. Show-through measured 203 at
+# its darkest on the Brother test scan; printed ink about 30.
+ink_threshold = 160
+# Ink components smaller than this (pixels) are specks, ignored by the blank check.
+speck_px = 40
+# A box with less ink than this (pixels, after specks) is marked blank.
+blank_ink_px = 80
+crop_margin_pt = 6.0
+max_mark_residual_px = 6.0

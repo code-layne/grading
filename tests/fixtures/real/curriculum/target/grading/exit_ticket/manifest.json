@@ -1,0 +1,133 @@
+{
+  "assignment": "sample-u0-l1-et",
+  "course": "example",
+  "pages": 2,
+  "questions": [
+    {
+      "id": "et1",
+      "type": "choice",
+      "points": 1,
+      "answer": "D",
+      "page": 1,
+      "box": [
+        105.14,
+        555.04,
+        36,
+        28.8
+      ]
+    },
+    {
+      "id": "et2",
+      "type": "short",
+      "points": 2,
+      "answer": "3/2",
+      "check": "expression",
+      "page": 1,
+      "box": [
+        450,
+        500.11,
+        108,
+        36
+      ]
+    },
+    {
+      "id": "et3",
+      "type": "short",
+      "points": 1,
+      "answer": "5",
+      "check": "numeric",
+      "tolerance": 0,
+      "page": 1,
+      "box": [
+        95.56,
+        417.28,
+        64.8,
+        25.2
+      ]
+    },
+    {
+      "id": "et4",
+      "type": "short",
+      "points": 2,
+      "answer": "-2, 2",
+      "check": "set",
+      "page": 1,
+      "box": [
+        172.31,
+        417.28,
+        86.4,
+        25.2
+      ]
+    },
+    {
+      "id": "et5",
+      "type": "short",
+      "points": 1,
+      "answer": "increasing",
+      "check": "text",
+      "page": 1,
+      "box": [
+        71.93,
+        353.97,
+        115.2,
+        28.8
+      ]
+    },
+    {
+      "id": "et6",
+      "type": "rubric",
+      "points": 4,
+      "rubric": "rubrics/sample-u0-l1-et-et6.yaml",
+      "page": 2,
+      "box": [
+        71.93,
+        598.79,
+        486.07,
+        115.2
+      ]
+    }
+  ],
+  "paper": [
+    612,
+    792
+  ],
+  "strip": [
+    54,
+    756,
+    504,
+    26
+  ],
+  "marks": {
+    "tl": [
+      21,
+      764,
+      12,
+      12
+    ],
+    "tr": [
+      579,
+      764,
+      12,
+      12
+    ],
+    "bl": [
+      21,
+      60,
+      12,
+      12
+    ],
+    "br": [
+      579,
+      60,
+      12,
+      12
+    ]
+  },
+  "qr": [
+    566,
+    720,
+    32,
+    32
+  ],
+  "key": false
+}
