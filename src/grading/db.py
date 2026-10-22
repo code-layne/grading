@@ -4,15 +4,18 @@ Every record about a student is keyed by tracking id. There are no name
 columns anywhere: names live only in roster-map.csv, which the build and the
 final report read and nothing in between does.
 
-Ingest (this stage) writes scans, pages, crops, assignments, questions and
-submissions. readings, rulings and scores are here so the schema is whole;
-the read, score and review steps fill them.
+Ingest writes scans, pages, crops, assignments, questions and submissions.
+Read, score and verify (pipeline.py) write readings, judgments, scores,
+api_calls, batches and the review queue. Review writes rulings.
+
+The schema changes only by migration: SCHEMA is version 1 as session 3 left
+it, and MIGRATIONS[n] takes a database from version n - 1 to n.
 """
 
 import sqlite3
 from pathlib import Path
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -142,6 +145,100 @@ CREATE TABLE IF NOT EXISTS scores (
 """
 
 
+MIGRATIONS = {
+    # Read, score and verify.
+    2: """
+-- Which call produced a reading, and the answer as grouping and rulings see it.
+ALTER TABLE readings ADD COLUMN request_key TEXT;
+ALTER TABLE readings ADD COLUMN normalized TEXT;
+CREATE UNIQUE INDEX readings_one_per_pass ON readings (crop_id, pass);
+
+-- A rubric score (one per group of identical answers, on the group's first
+-- crop) or a verify verdict (one per crop).
+CREATE TABLE judgments (
+    id                INTEGER PRIMARY KEY,
+    crop_id           INTEGER NOT NULL REFERENCES crops(id),
+    pass              TEXT NOT NULL CHECK (pass IN ('rubric', 'verify')),
+    assignment        TEXT NOT NULL,
+    question          TEXT NOT NULL,
+    normalized_answer TEXT,
+    points            REAL,
+    criteria          TEXT,             -- JSON {criterion: {points, evidence, confidence}}
+    feedback          TEXT,
+    agrees            INTEGER,          -- verify: 1 agrees with the first reading and score
+    dispute           TEXT,
+    model             TEXT,
+    request_key       TEXT,
+    created_at        TEXT NOT NULL,
+    UNIQUE (crop_id, pass)
+);
+
+-- Every API call and its token counts (dollars are worked out from config prices).
+CREATE TABLE api_calls (
+    id                    INTEGER PRIMARY KEY,
+    request_key           TEXT NOT NULL,
+    call_type             TEXT NOT NULL CHECK (call_type IN ('read', 'rubric', 'verify')),
+    crop_id               INTEGER REFERENCES crops(id),
+    mode                  TEXT NOT NULL CHECK (mode IN ('standard', 'batch')),
+    batch_id              TEXT,
+    model                 TEXT,
+    status                TEXT NOT NULL,  -- ok | refusal | truncated | no-tool-call | invalid | errored | expired | canceled
+    error                 TEXT,
+    input_tokens          INTEGER NOT NULL DEFAULT 0,
+    output_tokens         INTEGER NOT NULL DEFAULT 0,
+    cache_write_5m_tokens INTEGER NOT NULL DEFAULT 0,
+    cache_write_1h_tokens INTEGER NOT NULL DEFAULT 0,
+    cache_read_tokens     INTEGER NOT NULL DEFAULT 0,
+    created_at            TEXT NOT NULL
+);
+CREATE INDEX api_calls_key ON api_calls (request_key);
+
+-- Batch API submissions. A rerun collects an in_progress batch instead of
+-- submitting the same requests again.
+CREATE TABLE batches (
+    id           TEXT PRIMARY KEY,      -- the Batch API's id
+    submitted_at TEXT NOT NULL,
+    request_keys TEXT NOT NULL,         -- JSON list of custom_ids
+    status       TEXT NOT NULL CHECK (status IN ('in_progress', 'collected')),
+    collected_at TEXT
+);
+
+-- The proposed score and whether it is final or waits for review.
+ALTER TABLE scores ADD COLUMN crop_id INTEGER REFERENCES crops(id);
+ALTER TABLE scores ADD COLUMN normalized_answer TEXT;
+ALTER TABLE scores ADD COLUMN status TEXT;          -- final | review
+ALTER TABLE scores ADD COLUMN detail TEXT;          -- JSON: criteria, evidence, confidence
+
+-- What review (session 4b) works through: one row per crop, grouped by
+-- question and normalized answer, lowest priority number first.
+CREATE TABLE review_queue (
+    id                INTEGER PRIMARY KEY,
+    crop_id           INTEGER NOT NULL UNIQUE REFERENCES crops(id),
+    tracking_id       TEXT NOT NULL,
+    assignment        TEXT NOT NULL,
+    question          TEXT NOT NULL,
+    type              TEXT NOT NULL,
+    reasons           TEXT NOT NULL,    -- JSON list, e.g. ["verify-disagreement", "rubric"]
+    priority          INTEGER NOT NULL, -- 0 disagreement, 1 no score, 2 low confidence, 3 rubric, 4 blank
+    normalized_answer TEXT,
+    reading           TEXT,
+    verify_reading    TEXT,
+    points            REAL,             -- proposed; NULL when nothing could be proposed
+    verify_points     REAL,
+    max_points        REAL NOT NULL,
+    feedback          TEXT,
+    detail            TEXT,             -- JSON
+    created_at        TEXT NOT NULL,
+    resolved_at       TEXT
+);
+CREATE VIEW review_groups AS
+    SELECT assignment, question, normalized_answer, min(priority) AS priority, count(*) AS n
+    FROM review_queue WHERE resolved_at IS NULL
+    GROUP BY assignment, question, normalized_answer;
+""",
+}
+
+
 def connect(path: Path) -> sqlite3.Connection:
     path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(path)
@@ -150,8 +247,38 @@ def connect(path: Path) -> sqlite3.Connection:
     conn.executescript(SCHEMA)
     row = conn.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()
     if row is None:
-        conn.execute("INSERT INTO meta VALUES ('schema_version', ?)", (str(SCHEMA_VERSION),))
+        conn.execute("INSERT INTO meta VALUES ('schema_version', '1')")
         conn.commit()
-    elif int(row["value"]) != SCHEMA_VERSION:
-        raise RuntimeError(f"{path} has schema version {row['value']}, expected {SCHEMA_VERSION}")
+        version = 1
+    else:
+        version = int(row["value"])
+    if version > SCHEMA_VERSION:
+        raise RuntimeError(f"{path} has schema version {version}, newer than this code ({SCHEMA_VERSION})")
+    for n in range(version + 1, SCHEMA_VERSION + 1):
+        _migrate(conn, n)
     return conn
+
+
+def _migrate(conn, n):
+    # executescript commits first, so run the statements one by one inside
+    # an explicit transaction: a failed migration leaves version n - 1 intact.
+    conn.execute("BEGIN")
+    try:
+        for stmt in _statements(MIGRATIONS[n]):
+            conn.execute(stmt)
+        conn.execute("UPDATE meta SET value = ? WHERE key = 'schema_version'", (str(n),))
+        conn.execute("COMMIT")
+    except BaseException:
+        conn.execute("ROLLBACK")
+        raise
+
+
+def _statements(script):
+    buf = ""
+    for line in script.splitlines(keepends=True):
+        buf += line
+        if sqlite3.complete_statement(buf):
+            yield buf.strip()
+            buf = ""
+    if buf.strip():
+        raise ValueError(f"incomplete SQL statement: {buf.strip()[:60]}")
