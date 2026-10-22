@@ -1,0 +1,195 @@
+{
+ "key": "verify-alg2-u3-l1-gs-462HAN-gs3",
+ "meta": {
+  "call_type": "verify",
+  "crop_id": 11,
+  "tracking_id": "462HAN",
+  "assignment": "alg2-u3-l1-gs",
+  "question": "gs3",
+  "type": "choice"
+ },
+ "request": {
+  "model": "claude-opus-5-5",
+  "max_tokens": 8192,
+  "output_config": {
+   "effort": "medium"
+  },
+  "tools": [
+   {
+    "name": "verify_grade",
+    "strict": true,
+    "description": "Record your own reading and whether you agree with the first grader.",
+    "input_schema": {
+     "type": "object",
+     "properties": {
+      "reading": {
+       "type": "string",
+       "enum": [
+        "A",
+        "B",
+        "C",
+        "D",
+        "E",
+        "F",
+        "G",
+        "H",
+        "I",
+        "J",
+        "K",
+        "L",
+        "M",
+        "N",
+        "O",
+        "P",
+        "Q",
+        "R",
+        "S",
+        "T",
+        "U",
+        "V",
+        "W",
+        "X",
+        "Y",
+        "Z",
+        ""
+       ]
+      },
+      "latex": {
+       "type": "string"
+      },
+      "confidence": {
+       "type": "string",
+       "enum": [
+        "high",
+        "medium",
+        "low"
+       ]
+      },
+      "illegible": {
+       "type": "boolean"
+      },
+      "agrees": {
+       "type": "boolean"
+      },
+      "dispute": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "reading",
+      "latex",
+      "confidence",
+      "illegible",
+      "agrees",
+      "dispute"
+     ],
+     "additionalProperties": false
+    }
+   }
+  ],
+  "tool_choice": {
+   "type": "auto",
+   "disable_parallel_tool_use": true
+  },
+  "system": [
+   {
+    "type": "text",
+    "text": "You check another grader's work for a math teacher. You get one question's manifest entry (its key or rubric), the student's answer box image, and the first grader's transcription and score. You do not see the first grader's reasoning.\n\nWork independently:\n1. Transcribe the box yourself before you look at the first reading, with the same rules: exactly what the student wrote, never solved or corrected; ^ for exponents, / for fractions; a choice item is one capital letter.\n2. Then compare. agrees is true only when your transcription matches the first one and the score follows from it. Otherwise agrees is false and dispute says what differs, in one sentence. dispute is empty when you agree.\n\nconfidence and illegible mean the same as for the first reading: high only when you are certain of every character.\n\nAnswer only by calling verify_grade once."
+   },
+   {
+    "type": "text",
+    "text": "Manifest entry:\n{\n \"id\": \"gs3\",\n \"type\": \"choice\",\n \"points\": 1.0,\n \"answer\": \"E\"\n}",
+    "cache_control": {
+     "type": "ephemeral"
+    }
+   }
+  ],
+  "messages": [
+   {
+    "role": "user",
+    "content": [
+     {
+      "type": "image",
+      "source": {
+       "type": "base64",
+       "media_type": "image/png",
+       "sha256": "edc5a3128e7cb0e6673af1c414727752335e98e73dcc7a4f0b92eac1a0093ba9"
+      }
+     },
+     {
+      "type": "text",
+      "text": "First grader's reading: 'F' (confidence high).\nFirst grader's score: 0 of 1 points."
+     }
+    ]
+   }
+  ]
+ },
+ "fingerprint": "a97d581c7566670848371dcb337e125bbb0d7f09f652e698feb4a9ef5b7d1795",
+ "mode": "standard",
+ "batch_id": null,
+ "response": {
+  "id": "msg_011CgHqQfmX5Vd2WCZe4BiJv",
+  "container": null,
+  "content": [
+   {
+    "signature": "CAQS2wUKEAgTGAI4AUIIdGhpbmtpbmcSDFU41MZ4lu3JxTXenhoMkilNBkfdgxfzu+ZgIjCtKT2dcH51JselSHMs4Otv5Tojqvyz7ZbDKmWCL771jAqx3iP/YrIxlWLHWucKw40q+ATmKkjF7jxu3zOkqLX9/5TXbhgOFukNYYa5h45U8V4EbfSv86AZ2NRFtH29d5XBALSyxlTb6GyIufuzzWe9BuGA6hEL2BSLRtzYp/zQ2x523V2p9fF7VcjzeFRrEWowmGVtiwA04IG10ui7ggghdBlWGTpECLjau/kDGs2HKQ7nFz344LhvzEVb1ehH2tjBf5x8SBBwWoiI8V/P7ctEo4VJ3WB+BPa/5hphLiugRe5xMt4n2EzygLQwllzRUo3CjzZYlV9LrBz8XZyf99XSTWCeBv/qPz2Y6xfcTL15q+OKANDAjY4+9A8dGFpDrmrAbICVrSuwkilhNUlpLa0gow9hsS8OzIcfaiE4lqQ/4KMNP+iEfrq4LNz2ugXb8XNotd29Ozho6NWrC4gzjze/An7Fmm47uTi4Pg45mNup6+DLWG1elb7nOz+kKi0rafMP3UWR2iI4j0By46I7/sy71IYNmCpurFc2NhJvTzQyAZWsQqnaCao2lAfl4wotMBf+FFqFa2QGHNVJFKdmU+bHu90PSIKHrcRAJaog/KBixpnWInI1ODzVznt5j/RfeHcFgwDFrKjTrmNvsvGZH8Gl7DdQii/ZAEeaThWHbfJT78khyNuvzurlhOt1begVrYveof3pozPdQUn0wSgmM9l6lGX9xMEy2q9IFByCflyDl7gDoOoo/sY4KB1Aeqz7Z7NjbCqS4ItCuwPD7lHrfy/vIyMDbnLFZ8IoKU2Rb8R/1hp+sFcfvGZ/SfJoVT8DpKl8H/9Vebm4HY1MGm9Zi4RWmQlUS49/lS+K4HZ5QO/1g0uOkaljZ/PQVr63oc3dM+McDrLD60AeqRqxVBgB",
+    "thinking": "",
+    "type": "thinking"
+   },
+   {
+    "id": "toolu_01XFpLeZyj8KkybAaW4cPGqa",
+    "input": {
+     "reading": "F",
+     "latex": "F",
+     "confidence": "high",
+     "illegible": false,
+     "agrees": true,
+     "dispute": ""
+    },
+    "name": "verify_grade",
+    "type": "tool_use",
+    "caller": {
+     "type": "direct"
+    }
+   }
+  ],
+  "diagnostics": null,
+  "model": "claude-opus-5-5",
+  "role": "assistant",
+  "stop_details": null,
+  "stop_reason": "tool_use",
+  "stop_sequence": null,
+  "type": "message",
+  "usage": {
+   "cache_creation": {
+    "ephemeral_1h_input_tokens": 0,
+    "ephemeral_5m_input_tokens": 0
+   },
+   "cache_creation_input_tokens": 0,
+   "cache_read_input_tokens": 819,
+   "inference_geo": "global",
+   "input_tokens": 154,
+   "iterations": [
+    {
+     "cache_creation": {
+      "ephemeral_1h_input_tokens": 0,
+      "ephemeral_5m_input_tokens": 0
+     },
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 819,
+     "input_tokens": 154,
+     "model": null,
+     "output_tokens": 222,
+     "type": "message"
+    }
+   ],
+   "output_tokens": 222,
+   "output_tokens_details": {
+    "thinking_tokens": 60
+   },
+   "service_tier": "standard",
+   "speed": "standard"
+  }
+ },
+ "error": null
+}
