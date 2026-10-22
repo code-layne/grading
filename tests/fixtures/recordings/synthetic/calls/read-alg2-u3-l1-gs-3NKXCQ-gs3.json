@@ -1,0 +1,181 @@
+{
+ "key": "read-alg2-u3-l1-gs-3NKXCQ-gs3",
+ "meta": {
+  "call_type": "read",
+  "crop_id": 3,
+  "tracking_id": "3NKXCQ",
+  "assignment": "alg2-u3-l1-gs",
+  "question": "gs3",
+  "type": "choice"
+ },
+ "request": {
+  "model": "claude-opus-5-5",
+  "max_tokens": 4096,
+  "output_config": {
+   "effort": "low"
+  },
+  "tools": [
+   {
+    "name": "record_reading",
+    "strict": true,
+    "description": "Record the transcription of one answer box.",
+    "input_schema": {
+     "type": "object",
+     "properties": {
+      "reading": {
+       "type": "string",
+       "enum": [
+        "A",
+        "B",
+        "C",
+        "D",
+        "E",
+        "F",
+        "G",
+        "H",
+        "I",
+        "J",
+        "K",
+        "L",
+        "M",
+        "N",
+        "O",
+        "P",
+        "Q",
+        "R",
+        "S",
+        "T",
+        "U",
+        "V",
+        "W",
+        "X",
+        "Y",
+        "Z",
+        ""
+       ]
+      },
+      "latex": {
+       "type": "string"
+      },
+      "confidence": {
+       "type": "string",
+       "enum": [
+        "high",
+        "medium",
+        "low"
+       ]
+      },
+      "illegible": {
+       "type": "boolean"
+      }
+     },
+     "required": [
+      "reading",
+      "latex",
+      "confidence",
+      "illegible"
+     ],
+     "additionalProperties": false
+    }
+   }
+  ],
+  "tool_choice": {
+   "type": "auto",
+   "disable_parallel_tool_use": true
+  },
+  "system": [
+   {
+    "type": "text",
+    "text": "You transcribe handwritten answers for a math teacher. Each image is one answer box cropped from a scanned student quiz. The scan is thresholded: the background is white and pencil or pen is gray to black. The printed border of the box shows at the edges; anything outside it has been cut away.\n\nTranscribe exactly what the student wrote inside the box:\n- Do not solve the problem, correct a mistake, finish a partial answer, simplify, or reorder terms. A wrong answer is transcribed as written.\n- reading: plain-text math. Use ^ for exponents (x^2), / for fractions (3/2), sqrt(...) for roots, and the student's own signs and order. Keep any \"x =\" the student wrote. For written sentences, give the words as written, spelling included.\n- latex: the same content in LaTeX, with nothing added.\n- Ignore ink that is clearly crossed out. If two answers remain and you cannot tell which is final, transcribe both, separated by \" | \", and use low confidence.\n- confidence: high when you are certain of every character; medium when one character or sign could be read another way; low when more than that is uncertain.\n- illegible: true only when the answer cannot be read at all; then reading and latex are empty strings.\n- For a choice item the reading is the one capital letter the student wrote. If you see no letter, or more than one, set illegible true or confidence low.\n\nAnswer only by calling record_reading once.",
+    "cache_control": {
+     "type": "ephemeral"
+    }
+   }
+  ],
+  "messages": [
+   {
+    "role": "user",
+    "content": [
+     {
+      "type": "image",
+      "source": {
+       "type": "base64",
+       "media_type": "image/png",
+       "sha256": "2f0a331b4c685e2bfe137428dbe7cca78f3f6c1f2b860698fdf40cc825e18522"
+      }
+     },
+     {
+      "type": "text",
+      "text": "Question gs3 is a multiple-choice or matching item (one letter). Transcribe the answer in this box."
+     }
+    ]
+   }
+  ]
+ },
+ "fingerprint": "eea082066338a39d83e48eab93e1eb0f8313e9de4bda33f30df7014562c34572",
+ "mode": "standard",
+ "batch_id": null,
+ "response": {
+  "id": "msg_011CgHpvAtRg2kj7afwayMjo",
+  "container": null,
+  "content": [
+   {
+    "signature": "CAQSmgYKEAgTGAI4AUIIdGhpbmtpbmcSDOQNXDh2VZO4j1TDhxoMSAHcYD6gVlUju5MuIjBAy5nKblTsPCOdXYbmdTTDVlUuVid/fLIf/fSPN+K7Fl4ua02avxTMUZBjHqeS+XYqtwXcYbJRhWHv3UEuslXXsezhHnistjhkqSDabY+wZLoNnW7c7pAaaWnADl2qX3M5ly/LIfGAkMjUg7CJgiX9GGGUOMbKBRVgyX34dV3aK+mFIB4/VR9OFkvvM8C72THNauTxjRwr47PWdc9yYLoLoAcaKqi8PDOmbMG+h4heB+DSp9tij/8Jyjv1CeXRh8BCYHGn5DE3tH/RcckCPNXkryICfo5jrKmXMbsaCWMa20BBdnuNbVcC0zNMGAv55d6YeVNG5quI/kmF9x+0KgCuMgYuNwJuRCHqZ9C9K7n2jT8yCJRKONTW+qHNkazWtPYHnH2dQe1JMfwHFIqX/s/fZthnYDzZRrqop3udTG1sN8NnUVnPVWRmdr16o82g9KBBZl527D93xp13Ij9Fu5woN6g5GfkHx7pdydqxwrfOgf+OWDH3uaCj0SFesLvQBHWV9bBl/wYeFTqoectL/LUKOkpzW7igMeiprQnxx1sWZJ9QBzhlFRtGu7Ljs88pmqosAgKv2mrklSGHJP+RtoarDZeMbUNW1rH/mVgDWEWvYA4IskEIbm0ay4uobsUztXROrl8ZEJ5tptkJv3D7YLV40ERieV1tItg97MCK6QTjqGYiI2dSE4nLM7QMvmI/6A+FykrltZcZu9KURJ9C93A0yDMwtCphdRTkahAIdYUSkSZ1Rwpmb6eHPKMzAS/z6h7WJ4kDRjbKQXHo6QrcLRzE3HpQ0alOUDFf3mTazRklkXa6Zb+WIVnOJrDBOCNeUTAUq807ICREko5NZnCF4qYs+Og6rvUMG3F/pkNU47Gx4pxwC4wd4zVg+8+yZQtI8m2FQL92CtlVOMVu71RwHLPsv1M73euP4MgCYQ4b91xFJjRtvmUh+GfCqbuEcCKs0+QS3AZU4Y4u9qWodyd0l0oHcpWtGaXDB7uT3BgB",
+    "thinking": "",
+    "type": "thinking"
+   },
+   {
+    "id": "toolu_01Naa8toT7QfNKH47593q4TY",
+    "input": {
+     "reading": "F",
+     "latex": "F",
+     "confidence": "medium",
+     "illegible": false
+    },
+    "name": "record_reading",
+    "type": "tool_use",
+    "caller": {
+     "type": "direct"
+    }
+   }
+  ],
+  "diagnostics": null,
+  "model": "claude-opus-5-5",
+  "role": "assistant",
+  "stop_details": null,
+  "stop_reason": "tool_use",
+  "stop_sequence": null,
+  "type": "message",
+  "usage": {
+   "cache_creation": {
+    "ephemeral_1h_input_tokens": 0,
+    "ephemeral_5m_input_tokens": 0
+   },
+   "cache_creation_input_tokens": 0,
+   "cache_read_input_tokens": 924,
+   "inference_geo": "global",
+   "input_tokens": 156,
+   "iterations": [
+    {
+     "cache_creation": {
+      "ephemeral_1h_input_tokens": 0,
+      "ephemeral_5m_input_tokens": 0
+     },
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 924,
+     "input_tokens": 156,
+     "model": null,
+     "output_tokens": 202,
+     "type": "message"
+    }
+   ],
+   "output_tokens": 202,
+   "output_tokens_details": {
+    "thinking_tokens": 85
+   },
+   "service_tier": "standard",
+   "speed": "standard"
+  }
+ },
+ "error": null
+}

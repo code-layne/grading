@@ -1,0 +1,287 @@
+{
+ "key": "rubric-alg2-u3-l1-gs-44QB73-gs8",
+ "meta": {
+  "call_type": "rubric",
+  "crop_id": 88,
+  "tracking_id": "44QB73",
+  "assignment": "alg2-u3-l1-gs",
+  "question": "gs8",
+  "type": "rubric"
+ },
+ "request": {
+  "model": "claude-opus-5-5",
+  "max_tokens": 8192,
+  "output_config": {
+   "effort": "medium"
+  },
+  "tools": [
+   {
+    "name": "score_rubric",
+    "strict": true,
+    "description": "Record the score for each rubric criterion and one feedback note.",
+    "input_schema": {
+     "type": "object",
+     "properties": {
+      "criteria": {
+       "type": "object",
+       "properties": {
+        "step": {
+         "type": "object",
+         "properties": {
+          "points": {
+           "type": "number",
+           "enum": [
+            0,
+            1
+           ]
+          },
+          "evidence": {
+           "type": "string"
+          },
+          "confidence": {
+           "type": "string",
+           "enum": [
+            "high",
+            "medium",
+            "low"
+           ]
+          }
+         },
+         "required": [
+          "points",
+          "evidence",
+          "confidence"
+         ],
+         "additionalProperties": false
+        },
+        "reason": {
+         "type": "object",
+         "properties": {
+          "points": {
+           "type": "number",
+           "enum": [
+            0,
+            1
+           ]
+          },
+          "evidence": {
+           "type": "string"
+          },
+          "confidence": {
+           "type": "string",
+           "enum": [
+            "high",
+            "medium",
+            "low"
+           ]
+          }
+         },
+         "required": [
+          "points",
+          "evidence",
+          "confidence"
+         ],
+         "additionalProperties": false
+        },
+        "corrected": {
+         "type": "object",
+         "properties": {
+          "points": {
+           "type": "number",
+           "enum": [
+            0,
+            1
+           ]
+          },
+          "evidence": {
+           "type": "string"
+          },
+          "confidence": {
+           "type": "string",
+           "enum": [
+            "high",
+            "medium",
+            "low"
+           ]
+          }
+         },
+         "required": [
+          "points",
+          "evidence",
+          "confidence"
+         ],
+         "additionalProperties": false
+        },
+        "answer": {
+         "type": "object",
+         "properties": {
+          "points": {
+           "type": "number",
+           "enum": [
+            0,
+            1
+           ]
+          },
+          "evidence": {
+           "type": "string"
+          },
+          "confidence": {
+           "type": "string",
+           "enum": [
+            "high",
+            "medium",
+            "low"
+           ]
+          }
+         },
+         "required": [
+          "points",
+          "evidence",
+          "confidence"
+         ],
+         "additionalProperties": false
+        }
+       },
+       "required": [
+        "step",
+        "reason",
+        "corrected",
+        "answer"
+       ],
+       "additionalProperties": false
+      },
+      "feedback": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "criteria",
+      "feedback"
+     ],
+     "additionalProperties": false
+    }
+   }
+  ],
+  "tool_choice": {
+   "type": "auto",
+   "disable_parallel_tool_use": true
+  },
+  "system": [
+   {
+    "type": "text",
+    "text": "You score a student's written response against a rubric for a math teacher. You get the rubric, the answer box image, and a transcription of it made earlier. The image is the evidence; if the transcription disagrees with the image, trust the image.\n\nFor each criterion:\n- points: what the response earns on that criterion alone. Give credit only for what the response actually says, not for what the student probably meant.\n- evidence: the exact words from the response that earn the points, quoted. An empty string when the criterion earns nothing.\n- confidence: high, medium or low, for how sure you are of that criterion.\n\nfeedback: one short note to the student, addressed as \"you\". Point to what is missing or wrong with a question that sends the student back to it. Never state the correct answer, the corrected step, or the missing explanation. When everything is earned, name briefly what the response does well.\n\nThe graded examples in the rubric, when there are any, show how the teacher scores; follow them.\n\nAnswer only by calling score_rubric once."
+   },
+   {
+    "type": "text",
+    "text": "Question gs8, 4 points. Rubric:\n\n# Rubric for graded_sample item 8 (Unit 3, Lesson 3.1). manifest.json points\n# here as rubrics/alg2-u3-l1-gs-gs8.yaml, relative to this lesson directory.\nid: gs8\npoints: 4\ntask: >-\n  Maya simplified (3x^2 + 2x - 5) - (x^2 - 4x + 1) as\n  3x^2 + 2x - 5 - x^2 - 4x + 1 = 2x^2 - 2x - 4. Name the step where she went\n  wrong, explain what she should have done there, and give the correct answer.\ncriteria:\n  - id: step\n    points: 1\n    full: Names the step where the parentheses were removed (the first line) as where the error happened.\n  - id: reason\n    points: 1\n    full: >-\n      Explains that subtracting a polynomial subtracts every term, so every sign\n      in x^2 - 4x + 1 must change, not only the first one.\n  - id: corrected\n    points: 1\n    full: Shows the corrected step, 3x^2 + 2x - 5 - x^2 + 4x - 1 (or the terms -x^2 + 4x - 1).\n  - id: answer\n    points: 1\n    full: Gives the correct result, 2x^2 + 6x - 6.\nexamples:\n  - response: \"She forgot to distribute the negative to all the terms. It should be 2x^2 + 6x - 6.\"\n    scores: {step: 0, reason: 1, corrected: 0, answer: 1}\n  - response: \"The answer is 2x^2 - 2x - 4 because you combine like terms.\"\n    scores: {step: 0, reason: 0, corrected: 0, answer: 0}\n",
+    "cache_control": {
+     "type": "ephemeral"
+    }
+   }
+  ],
+  "messages": [
+   {
+    "role": "user",
+    "content": [
+     {
+      "type": "image",
+      "source": {
+       "type": "base64",
+       "media_type": "image/png",
+       "sha256": "726b305b0e1ffb0d8866b6584ba2d921ff1a6a7f899d215150f3b69bb813ffd2"
+      }
+     },
+     {
+      "type": "text",
+      "text": "Transcription from the reading pass:\n\nShe went wrong when she took off the parentheses. Subtracting means every term of x^2 - 4x + 1 changes sign, not just the x^2. It should be 3x^2 + 2x - 5 - x^2 + 4x - 1 = 2x^2 + 6x - 6\n\nScore the response in the image."
+     }
+    ]
+   }
+  ]
+ },
+ "fingerprint": "45ad9559f8774f89dd5f9d4fcfeb9a0618de5fbadbdc5212d8cb8eb43ec66e5f",
+ "mode": "standard",
+ "batch_id": null,
+ "response": {
+  "id": "msg_011CgHrUHx5TuBYhAT3aRNNN",
+  "container": null,
+  "content": [
+   {
+    "signature": "CAQSwwUKEAgTGAI4AUIIdGhpbmtpbmcSDFAoKe4BCsR0Y/nbCBoMre1GN/eiYtnqFmn4IjC67d9XSibazOifKLXztBY71L52cCYvxbEYL6omClqtp9bfeuEjPGQKHzRSueRpZkoq4ARo/kuRXTGSyy35yO+XLITCUt/IquT7JceToPnlQ88h6FWGnlojynICzuRgu4MBf2Rsf6IF8dOtXSxs9oXhzVhZnIw3JOQMxj/SRmN00M5k8RUylTSUSDpHsE+guDqIybzh46+gdWTErf0z42JVIekZCBfBdh/jECoCWZQr0KWXDBGg3Y/Iw0aEVo+4ftjZGEk/uvt3Xiob1JeENBtc9h3n92rKCaubPkxodcLCXswIXip/WYVCy2zGbrnOSXGghmiAJIAAWQYAJ3jnhyZOBM8jzvKBMZOTFYmTTgx9IFf3cB+nofrjYQKLCF1WQzKGPvIf1v1GBRWAMNDNVQ7PfKRZdDfr5WPHYhnFBSgSNEx9WfZDWlLsTBQtAA7J12qtkiqGSE+RoA7Xccak/AJzlcEDFdrXp1/lWrOEFmHl2/A0jdCEkutWQ00vz0iBLk1CG2sZButu7ZLNDS1yE2/KS2IdjaMxOY3Ofr1ITgF280xRwo36aXDqh+/pYQpySzP5GGeWBxSA4LIaOLSgm5ynRN4rBib4ONiVN8ZCyfR6/Ze4WYBC2WMt8vMe2HZWnb2R/QVYQWlQYtzUPSFhWogKx7dG3sr7GdaRkwIfY618soYbz4ogaBKAB5Zma7r48AQDeTImyeVWpRc5MfrzfPzOtPap8L5PfDeYgHm7VsfCPzBCREIk6LRuyzW7y6dw3xLciiKyT7wh7g2arFUDWiAPlUctoRJakZUAQRz0LFMckC5xB8VeEiCH80oAp8cu2G+UMyKbtsxnrXKSir1ztplpHm3WBYtSk4Hgk/sZPYTKttFqyBgB",
+    "thinking": "",
+    "type": "thinking"
+   },
+   {
+    "id": "toolu_01KeXcQ8tzmaURr1nn2ouHvp",
+    "input": {
+     "criteria": {
+      "step": {
+       "points": 1,
+       "evidence": "She went wrong when she took off the parentheses.",
+       "confidence": "high"
+      },
+      "reason": {
+       "points": 1,
+       "evidence": "Subtracting means every term of x^2 - 4x + 1 changes sign, not just the x^2.",
+       "confidence": "high"
+      },
+      "corrected": {
+       "points": 1,
+       "evidence": "It should be 3x^2 + 2x - 5 - x^2 + 4x - 1",
+       "confidence": "high"
+      },
+      "answer": {
+       "points": 1,
+       "evidence": "= 2x^2 + 6x - 6",
+       "confidence": "high"
+      }
+     },
+     "feedback": "You earned all 4 points. You named the step where the parentheses came off and explained why every term has to change sign, not just the first one. Then you showed the corrected line and simplified it correctly."
+    },
+    "name": "score_rubric",
+    "type": "tool_use",
+    "caller": {
+     "type": "direct"
+    }
+   }
+  ],
+  "diagnostics": null,
+  "model": "claude-opus-5-5",
+  "role": "assistant",
+  "stop_details": null,
+  "stop_reason": "tool_use",
+  "stop_sequence": null,
+  "type": "message",
+  "usage": {
+   "cache_creation": {
+    "ephemeral_1h_input_tokens": 0,
+    "ephemeral_5m_input_tokens": 0
+   },
+   "cache_creation_input_tokens": 0,
+   "cache_read_input_tokens": 1713,
+   "inference_geo": "global",
+   "input_tokens": 1391,
+   "iterations": [
+    {
+     "cache_creation": {
+      "ephemeral_1h_input_tokens": 0,
+      "ephemeral_5m_input_tokens": 0
+     },
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 1713,
+     "input_tokens": 1391,
+     "model": null,
+     "output_tokens": 371,
+     "type": "message"
+    }
+   ],
+   "output_tokens": 371,
+   "output_tokens_details": {
+    "thinking_tokens": 49
+   },
+   "service_tier": "standard",
+   "speed": "standard"
+  }
+ },
+ "error": null
+}

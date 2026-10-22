@@ -1,0 +1,190 @@
+{
+ "key": "verify-alg2-u3-l1-gs-3NKXCQ-gs4",
+ "meta": {
+  "call_type": "verify",
+  "crop_id": 4,
+  "tracking_id": "3NKXCQ",
+  "assignment": "alg2-u3-l1-gs",
+  "question": "gs4",
+  "type": "choice"
+ },
+ "request": {
+  "model": "claude-opus-5-5",
+  "max_tokens": 8192,
+  "output_config": {
+   "effort": "medium"
+  },
+  "tools": [
+   {
+    "name": "verify_grade",
+    "strict": true,
+    "description": "Record your own reading and whether you agree with the first grader.",
+    "input_schema": {
+     "type": "object",
+     "properties": {
+      "reading": {
+       "type": "string",
+       "enum": [
+        "A",
+        "B",
+        "C",
+        "D",
+        "E",
+        "F",
+        "G",
+        "H",
+        "I",
+        "J",
+        "K",
+        "L",
+        "M",
+        "N",
+        "O",
+        "P",
+        "Q",
+        "R",
+        "S",
+        "T",
+        "U",
+        "V",
+        "W",
+        "X",
+        "Y",
+        "Z",
+        ""
+       ]
+      },
+      "latex": {
+       "type": "string"
+      },
+      "confidence": {
+       "type": "string",
+       "enum": [
+        "high",
+        "medium",
+        "low"
+       ]
+      },
+      "illegible": {
+       "type": "boolean"
+      },
+      "agrees": {
+       "type": "boolean"
+      },
+      "dispute": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "reading",
+      "latex",
+      "confidence",
+      "illegible",
+      "agrees",
+      "dispute"
+     ],
+     "additionalProperties": false
+    }
+   }
+  ],
+  "tool_choice": {
+   "type": "auto",
+   "disable_parallel_tool_use": true
+  },
+  "system": [
+   {
+    "type": "text",
+    "text": "You check another grader's work for a math teacher. You get one question's manifest entry (its key or rubric), the student's answer box image, and the first grader's transcription and score. You do not see the first grader's reasoning.\n\nWork independently:\n1. Transcribe the box yourself before you look at the first reading, with the same rules: exactly what the student wrote, never solved or corrected; ^ for exponents, / for fractions; a choice item is one capital letter.\n2. Then compare. agrees is true only when your transcription matches the first one and the score follows from it. Otherwise agrees is false and dispute says what differs, in one sentence. dispute is empty when you agree.\n\nconfidence and illegible mean the same as for the first reading: high only when you are certain of every character.\n\nAnswer only by calling verify_grade once."
+   },
+   {
+    "type": "text",
+    "text": "Manifest entry:\n{\n \"id\": \"gs4\",\n \"type\": \"choice\",\n \"points\": 1.0,\n \"answer\": \"G\"\n}",
+    "cache_control": {
+     "type": "ephemeral"
+    }
+   }
+  ],
+  "messages": [
+   {
+    "role": "user",
+    "content": [
+     {
+      "type": "image",
+      "source": {
+       "type": "base64",
+       "media_type": "image/png",
+       "sha256": "6ded26dedf6aa21ca28e16f86f5d1e06496cf1d0adf8c3d155010e968cca1d75"
+      }
+     },
+     {
+      "type": "text",
+      "text": "First grader's reading: 'G' (confidence high).\nFirst grader's score: 1 of 1 points."
+     }
+    ]
+   }
+  ]
+ },
+ "fingerprint": "afbfd32b6437131294613ff812d45628a7a195f9da8a09398c22977ff606eb92",
+ "mode": "standard",
+ "batch_id": null,
+ "response": {
+  "id": "msg_011CgHqLydTYMWxQ8QQLDMX5",
+  "container": null,
+  "content": [
+   {
+    "id": "toolu_01As9bEC8vZGAAdhF5WB626Y",
+    "input": {
+     "reading": "G",
+     "latex": "G",
+     "confidence": "high",
+     "illegible": false,
+     "agrees": true,
+     "dispute": ""
+    },
+    "name": "verify_grade",
+    "type": "tool_use",
+    "caller": {
+     "type": "direct"
+    }
+   }
+  ],
+  "diagnostics": null,
+  "model": "claude-opus-5-5",
+  "role": "assistant",
+  "stop_details": null,
+  "stop_reason": "tool_use",
+  "stop_sequence": null,
+  "type": "message",
+  "usage": {
+   "cache_creation": {
+    "ephemeral_1h_input_tokens": 0,
+    "ephemeral_5m_input_tokens": 819
+   },
+   "cache_creation_input_tokens": 819,
+   "cache_read_input_tokens": 0,
+   "inference_geo": "global",
+   "input_tokens": 154,
+   "iterations": [
+    {
+     "cache_creation": {
+      "ephemeral_1h_input_tokens": 0,
+      "ephemeral_5m_input_tokens": 819
+     },
+     "cache_creation_input_tokens": 819,
+     "cache_read_input_tokens": 0,
+     "input_tokens": 154,
+     "model": null,
+     "output_tokens": 161,
+     "type": "message"
+    }
+   ],
+   "output_tokens": 161,
+   "output_tokens_details": {
+    "thinking_tokens": 0
+   },
+   "service_tier": "standard",
+   "speed": "standard"
+  }
+ },
+ "error": null
+}

@@ -1,0 +1,317 @@
+{
+ "key": "verify-alg2-u3-l1-gs-AQ268H-gs8",
+ "meta": {
+  "call_type": "verify",
+  "crop_id": 32,
+  "tracking_id": "AQ268H",
+  "assignment": "alg2-u3-l1-gs",
+  "question": "gs8",
+  "type": "rubric"
+ },
+ "request": {
+  "model": "claude-opus-5-5",
+  "max_tokens": 8192,
+  "output_config": {
+   "effort": "medium"
+  },
+  "tools": [
+   {
+    "name": "verify_grade",
+    "strict": true,
+    "description": "Record your own reading and whether you agree with the first grader.",
+    "input_schema": {
+     "type": "object",
+     "properties": {
+      "reading": {
+       "type": "string"
+      },
+      "latex": {
+       "type": "string"
+      },
+      "confidence": {
+       "type": "string",
+       "enum": [
+        "high",
+        "medium",
+        "low"
+       ]
+      },
+      "illegible": {
+       "type": "boolean"
+      },
+      "criteria": {
+       "type": "object",
+       "properties": {
+        "step": {
+         "type": "object",
+         "properties": {
+          "points": {
+           "type": "number",
+           "enum": [
+            0,
+            1
+           ]
+          },
+          "evidence": {
+           "type": "string"
+          },
+          "confidence": {
+           "type": "string",
+           "enum": [
+            "high",
+            "medium",
+            "low"
+           ]
+          }
+         },
+         "required": [
+          "points",
+          "evidence",
+          "confidence"
+         ],
+         "additionalProperties": false
+        },
+        "reason": {
+         "type": "object",
+         "properties": {
+          "points": {
+           "type": "number",
+           "enum": [
+            0,
+            1
+           ]
+          },
+          "evidence": {
+           "type": "string"
+          },
+          "confidence": {
+           "type": "string",
+           "enum": [
+            "high",
+            "medium",
+            "low"
+           ]
+          }
+         },
+         "required": [
+          "points",
+          "evidence",
+          "confidence"
+         ],
+         "additionalProperties": false
+        },
+        "corrected": {
+         "type": "object",
+         "properties": {
+          "points": {
+           "type": "number",
+           "enum": [
+            0,
+            1
+           ]
+          },
+          "evidence": {
+           "type": "string"
+          },
+          "confidence": {
+           "type": "string",
+           "enum": [
+            "high",
+            "medium",
+            "low"
+           ]
+          }
+         },
+         "required": [
+          "points",
+          "evidence",
+          "confidence"
+         ],
+         "additionalProperties": false
+        },
+        "answer": {
+         "type": "object",
+         "properties": {
+          "points": {
+           "type": "number",
+           "enum": [
+            0,
+            1
+           ]
+          },
+          "evidence": {
+           "type": "string"
+          },
+          "confidence": {
+           "type": "string",
+           "enum": [
+            "high",
+            "medium",
+            "low"
+           ]
+          }
+         },
+         "required": [
+          "points",
+          "evidence",
+          "confidence"
+         ],
+         "additionalProperties": false
+        }
+       },
+       "required": [
+        "step",
+        "reason",
+        "corrected",
+        "answer"
+       ],
+       "additionalProperties": false
+      },
+      "agrees": {
+       "type": "boolean"
+      },
+      "dispute": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "reading",
+      "latex",
+      "confidence",
+      "illegible",
+      "criteria",
+      "agrees",
+      "dispute"
+     ],
+     "additionalProperties": false
+    }
+   }
+  ],
+  "tool_choice": {
+   "type": "auto",
+   "disable_parallel_tool_use": true
+  },
+  "system": [
+   {
+    "type": "text",
+    "text": "You check another grader's work for a math teacher. You get one question's manifest entry (its key or rubric), the student's answer box image, and the first grader's transcription and score. You do not see the first grader's reasoning.\n\nWork independently:\n1. Transcribe the box yourself before you look at the first reading, with the same rules: exactly what the student wrote, never solved or corrected; ^ for exponents, / for fractions; a choice item is one capital letter.\n2. Then compare. agrees is true only when your transcription matches the first one and the score follows from it. Otherwise agrees is false and dispute says what differs, in one sentence. dispute is empty when you agree.\n\nconfidence and illegible mean the same as for the first reading: high only when you are certain of every character.\n\nAnswer only by calling verify_grade once.\n\nFor a rubric question, also score every criterion yourself from the image, with the evidence words quoted, before comparing totals. agrees is true only when every criterion gets the same points as the first grader gave."
+   },
+   {
+    "type": "text",
+    "text": "Manifest entry:\n{\n \"id\": \"gs8\",\n \"type\": \"rubric\",\n \"points\": 4.0,\n \"rubric\": \"rubrics/alg2-u3-l1-gs-gs8.yaml\"\n}\n\nRubric:\n\n# Rubric for graded_sample item 8 (Unit 3, Lesson 3.1). manifest.json points\n# here as rubrics/alg2-u3-l1-gs-gs8.yaml, relative to this lesson directory.\nid: gs8\npoints: 4\ntask: >-\n  Maya simplified (3x^2 + 2x - 5) - (x^2 - 4x + 1) as\n  3x^2 + 2x - 5 - x^2 - 4x + 1 = 2x^2 - 2x - 4. Name the step where she went\n  wrong, explain what she should have done there, and give the correct answer.\ncriteria:\n  - id: step\n    points: 1\n    full: Names the step where the parentheses were removed (the first line) as where the error happened.\n  - id: reason\n    points: 1\n    full: >-\n      Explains that subtracting a polynomial subtracts every term, so every sign\n      in x^2 - 4x + 1 must change, not only the first one.\n  - id: corrected\n    points: 1\n    full: Shows the corrected step, 3x^2 + 2x - 5 - x^2 + 4x - 1 (or the terms -x^2 + 4x - 1).\n  - id: answer\n    points: 1\n    full: Gives the correct result, 2x^2 + 6x - 6.\nexamples:\n  - response: \"She forgot to distribute the negative to all the terms. It should be 2x^2 + 6x - 6.\"\n    scores: {step: 0, reason: 1, corrected: 0, answer: 1}\n  - response: \"The answer is 2x^2 - 2x - 4 because you combine like terms.\"\n    scores: {step: 0, reason: 0, corrected: 0, answer: 0}\n",
+    "cache_control": {
+     "type": "ephemeral"
+    }
+   }
+  ],
+  "messages": [
+   {
+    "role": "user",
+    "content": [
+     {
+      "type": "image",
+      "source": {
+       "type": "base64",
+       "media_type": "image/png",
+       "sha256": "427c0dd5c5a8e6a2f0954e384fd1d00e000f4989d20ce3dd8eb2a44d3974ef4b"
+      }
+     },
+     {
+      "type": "text",
+      "text": "First grader's reading: 'She should have added them instead, 4x^2 - 2x - 4' (confidence medium).\nFirst grader's score: 0 of 4 points.\nBy criterion: step 0, reason 0, corrected 0, answer 0."
+     }
+    ]
+   }
+  ]
+ },
+ "fingerprint": "15996a888b4338998db5406e76e6e865b8d463d6345a7744bfe6de1fdb3e40ee",
+ "mode": "standard",
+ "batch_id": null,
+ "response": {
+  "id": "msg_011CgHrYwEnUaLidkoAK9Cc3",
+  "container": null,
+  "content": [
+   {
+    "signature": "CAQSnAUKEAgTGAI4AUIIdGhpbmtpbmcSDN3EHs0zATUUITsBDxoMoB8UGxJcnDBLHYZMIjB66xdyob9EslegBXsDZmwjdCirpGrVoteSbILstPuYgRkEf/W2XHm0O8WjPzMw3gIquQTricM0ZTjwA9ujBF3Vq9FFWkqHNn1I2sSh9E2Rnn2w9r0WNbQjVrqKBqEllZ0CR7/wMKyyDtKku8Za3Bi+e/oGpIVCtIRS77edd1n5eUwTrfIKzmm0gi3OU/pU5Gv+1XEtMI+7QsQAAZPaa48g0/sRLD9r2xt0r478RJs/iYY5Lu/1nfpXrQOYJyTu8ffMTw25jPEHYeRvj5kKMN8JdTsvfMyrcTN+k0BgX5vmxtTHjp63JLAS8h+9EAHLGwNhFCPikMJ4O1Rsoywl1/RpO9Xabvo+oUBq+TRe2sPCDoJR10m8VnV0U2gsJNkLHVNypbiN1BB4R2GzOhwgCH23pfZ91cDMZG0+wqP/tVeOUrDOX8XO9M2RNoSIlAXvd91bGSUs9EaDmZYpSyf7gh4YdzACtsS4LU4RqETUhmIsFig293wBqbLuqK6urf1YT3vAhnZUR3OE8pMKLN0N58DWMi2hem63dP6fL5iHtcf9Ua7dmqIXt8/1jggZ+XSDxHhbF2uijmgZkVMprZYwNHpDwo+DnVIefN7VI2UgRFwpiE2QOW4R3CNSC89XPBUUO2rxECyeMV0z9FZuncPcnvdkZiIE7Zwcv+GpyZ2+QU+bnoPVPYh6EH2lbZQj+9TUWqCSMUeM014+JyCKQoCg5NpTgtRRkn2EWaWehNIqWuEirFOkVIsbswSxVV6n0ZqOzOICugdxcRGI0E+M0GiEnGTxalpGa0dupmex0I9FaMjl8IRWg8UUq9DXd8Y6FxgB",
+    "thinking": "",
+    "type": "thinking"
+   },
+   {
+    "id": "toolu_014fGdrb4MrPi44rzcpZzVFb",
+    "input": {
+     "reading": "She should have added them instead, 4x^2 - 2x - 4",
+     "latex": "\\text{She should have added them instead, } 4x^2 - 2x - 4",
+     "confidence": "high",
+     "illegible": false,
+     "criteria": {
+      "step": {
+       "points": 0,
+       "evidence": "The student never names a step. 'She should have added them instead' does not point to the line where the parentheses were removed.",
+       "confidence": "high"
+      },
+      "reason": {
+       "points": 0,
+       "evidence": "'She should have added them instead' is not the reasoning the rubric asks for. It never says the minus sign has to change the sign of every term.",
+       "confidence": "high"
+      },
+      "corrected": {
+       "points": 0,
+       "evidence": "There is no corrected line with -x^2 + 4x - 1 anywhere.",
+       "confidence": "high"
+      },
+      "answer": {
+       "points": 0,
+       "evidence": "The final answer '4x^2 - 2x - 4' is not 2x^2 + 6x - 6.",
+       "confidence": "high"
+      }
+     },
+     "agrees": true,
+     "dispute": ""
+    },
+    "name": "verify_grade",
+    "type": "tool_use",
+    "caller": {
+     "type": "direct"
+    }
+   }
+  ],
+  "diagnostics": null,
+  "model": "claude-opus-5-5",
+  "role": "assistant",
+  "stop_details": null,
+  "stop_reason": "tool_use",
+  "stop_sequence": null,
+  "type": "message",
+  "usage": {
+   "cache_creation": {
+    "ephemeral_1h_input_tokens": 0,
+    "ephemeral_5m_input_tokens": 0
+   },
+   "cache_creation_input_tokens": 0,
+   "cache_read_input_tokens": 1899,
+   "inference_geo": "global",
+   "input_tokens": 1358,
+   "iterations": [
+    {
+     "cache_creation": {
+      "ephemeral_1h_input_tokens": 0,
+      "ephemeral_5m_input_tokens": 0
+     },
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 1899,
+     "input_tokens": 1358,
+     "model": null,
+     "output_tokens": 508,
+     "type": "message"
+    }
+   ],
+   "output_tokens": 508,
+   "output_tokens_details": {
+    "thinking_tokens": 43
+   },
+   "service_tier": "standard",
+   "speed": "standard"
+  }
+ },
+ "error": null
+}

@@ -1,0 +1,282 @@
+{
+ "key": "rubric-alg2-u3-l1-gs-6VVV2P-gs8",
+ "meta": {
+  "call_type": "rubric",
+  "crop_id": 40,
+  "tracking_id": "6VVV2P",
+  "assignment": "alg2-u3-l1-gs",
+  "question": "gs8",
+  "type": "rubric"
+ },
+ "request": {
+  "model": "claude-opus-5-5",
+  "max_tokens": 8192,
+  "output_config": {
+   "effort": "medium"
+  },
+  "tools": [
+   {
+    "name": "score_rubric",
+    "strict": true,
+    "description": "Record the score for each rubric criterion and one feedback note.",
+    "input_schema": {
+     "type": "object",
+     "properties": {
+      "criteria": {
+       "type": "object",
+       "properties": {
+        "step": {
+         "type": "object",
+         "properties": {
+          "points": {
+           "type": "number",
+           "enum": [
+            0,
+            1
+           ]
+          },
+          "evidence": {
+           "type": "string"
+          },
+          "confidence": {
+           "type": "string",
+           "enum": [
+            "high",
+            "medium",
+            "low"
+           ]
+          }
+         },
+         "required": [
+          "points",
+          "evidence",
+          "confidence"
+         ],
+         "additionalProperties": false
+        },
+        "reason": {
+         "type": "object",
+         "properties": {
+          "points": {
+           "type": "number",
+           "enum": [
+            0,
+            1
+           ]
+          },
+          "evidence": {
+           "type": "string"
+          },
+          "confidence": {
+           "type": "string",
+           "enum": [
+            "high",
+            "medium",
+            "low"
+           ]
+          }
+         },
+         "required": [
+          "points",
+          "evidence",
+          "confidence"
+         ],
+         "additionalProperties": false
+        },
+        "corrected": {
+         "type": "object",
+         "properties": {
+          "points": {
+           "type": "number",
+           "enum": [
+            0,
+            1
+           ]
+          },
+          "evidence": {
+           "type": "string"
+          },
+          "confidence": {
+           "type": "string",
+           "enum": [
+            "high",
+            "medium",
+            "low"
+           ]
+          }
+         },
+         "required": [
+          "points",
+          "evidence",
+          "confidence"
+         ],
+         "additionalProperties": false
+        },
+        "answer": {
+         "type": "object",
+         "properties": {
+          "points": {
+           "type": "number",
+           "enum": [
+            0,
+            1
+           ]
+          },
+          "evidence": {
+           "type": "string"
+          },
+          "confidence": {
+           "type": "string",
+           "enum": [
+            "high",
+            "medium",
+            "low"
+           ]
+          }
+         },
+         "required": [
+          "points",
+          "evidence",
+          "confidence"
+         ],
+         "additionalProperties": false
+        }
+       },
+       "required": [
+        "step",
+        "reason",
+        "corrected",
+        "answer"
+       ],
+       "additionalProperties": false
+      },
+      "feedback": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "criteria",
+      "feedback"
+     ],
+     "additionalProperties": false
+    }
+   }
+  ],
+  "tool_choice": {
+   "type": "auto",
+   "disable_parallel_tool_use": true
+  },
+  "system": [
+   {
+    "type": "text",
+    "text": "You score a student's written response against a rubric for a math teacher. You get the rubric, the answer box image, and a transcription of it made earlier. The image is the evidence; if the transcription disagrees with the image, trust the image.\n\nFor each criterion:\n- points: what the response earns on that criterion alone. Give credit only for what the response actually says, not for what the student probably meant.\n- evidence: the exact words from the response that earn the points, quoted. An empty string when the criterion earns nothing.\n- confidence: high, medium or low, for how sure you are of that criterion.\n\nfeedback: one short note to the student, addressed as \"you\". Point to what is missing or wrong with a question that sends the student back to it. Never state the correct answer, the corrected step, or the missing explanation. When everything is earned, name briefly what the response does well.\n\nThe graded examples in the rubric, when there are any, show how the teacher scores; follow them.\n\nAnswer only by calling score_rubric once."
+   },
+   {
+    "type": "text",
+    "text": "Question gs8, 4 points. Rubric:\n\n# Rubric for graded_sample item 8 (Unit 3, Lesson 3.1). manifest.json points\n# here as rubrics/alg2-u3-l1-gs-gs8.yaml, relative to this lesson directory.\nid: gs8\npoints: 4\ntask: >-\n  Maya simplified (3x^2 + 2x - 5) - (x^2 - 4x + 1) as\n  3x^2 + 2x - 5 - x^2 - 4x + 1 = 2x^2 - 2x - 4. Name the step where she went\n  wrong, explain what she should have done there, and give the correct answer.\ncriteria:\n  - id: step\n    points: 1\n    full: Names the step where the parentheses were removed (the first line) as where the error happened.\n  - id: reason\n    points: 1\n    full: >-\n      Explains that subtracting a polynomial subtracts every term, so every sign\n      in x^2 - 4x + 1 must change, not only the first one.\n  - id: corrected\n    points: 1\n    full: Shows the corrected step, 3x^2 + 2x - 5 - x^2 + 4x - 1 (or the terms -x^2 + 4x - 1).\n  - id: answer\n    points: 1\n    full: Gives the correct result, 2x^2 + 6x - 6.\nexamples:\n  - response: \"She forgot to distribute the negative to all the terms. It should be 2x^2 + 6x - 6.\"\n    scores: {step: 0, reason: 1, corrected: 0, answer: 1}\n  - response: \"The answer is 2x^2 - 2x - 4 because you combine like terms.\"\n    scores: {step: 0, reason: 0, corrected: 0, answer: 0}\n",
+    "cache_control": {
+     "type": "ephemeral"
+    }
+   }
+  ],
+  "messages": [
+   {
+    "role": "user",
+    "content": [
+     {
+      "type": "image",
+      "source": {
+       "type": "base64",
+       "media_type": "image/png",
+       "sha256": "75a6226e5418bf2c9d1f48648cc1ba0b2671c4e76d523abb22e1ed184a9288b0"
+      }
+     },
+     {
+      "type": "text",
+      "text": "Transcription from the reading pass:\n\nHer first line is wrong. The answer should be 2x^2 + 6x - 6\n\nScore the response in the image."
+     }
+    ]
+   }
+  ]
+ },
+ "fingerprint": "f5ec9e55da431c6536e6278db8b1016ed8339216079f63fd1ead53b275d1d84a",
+ "mode": "standard",
+ "batch_id": null,
+ "response": {
+  "id": "msg_011CgHrDqw2MYotd5gs558Fy",
+  "container": null,
+  "content": [
+   {
+    "id": "toolu_01Qe14SZigRF7S5WCaJXr5aP",
+    "input": {
+     "criteria": {
+      "step": {
+       "points": 1,
+       "evidence": "Her first line is wrong.",
+       "confidence": "high"
+      },
+      "reason": {
+       "points": 0,
+       "evidence": "",
+       "confidence": "high"
+      },
+      "corrected": {
+       "points": 0,
+       "evidence": "",
+       "confidence": "high"
+      },
+      "answer": {
+       "points": 1,
+       "evidence": "The answer should be 2x^2 + 6x - 6",
+       "confidence": "high"
+      }
+     },
+     "feedback": "You found the right line and got the right final answer. You still need to say what Maya did wrong when she removed the parentheses. When you subtract a whole polynomial, what happens to each of its terms? Then write out the first line the way it should look."
+    },
+    "name": "score_rubric",
+    "type": "tool_use",
+    "caller": {
+     "type": "direct"
+    }
+   }
+  ],
+  "diagnostics": null,
+  "model": "claude-opus-5-5",
+  "role": "assistant",
+  "stop_details": null,
+  "stop_reason": "tool_use",
+  "stop_sequence": null,
+  "type": "message",
+  "usage": {
+   "cache_creation": {
+    "ephemeral_1h_input_tokens": 0,
+    "ephemeral_5m_input_tokens": 1713
+   },
+   "cache_creation_input_tokens": 1713,
+   "cache_read_input_tokens": 0,
+   "inference_geo": "global",
+   "input_tokens": 1326,
+   "iterations": [
+    {
+     "cache_creation": {
+      "ephemeral_1h_input_tokens": 0,
+      "ephemeral_5m_input_tokens": 1713
+     },
+     "cache_creation_input_tokens": 1713,
+     "cache_read_input_tokens": 0,
+     "input_tokens": 1326,
+     "model": null,
+     "output_tokens": 271,
+     "type": "message"
+    }
+   ],
+   "output_tokens": 271,
+   "output_tokens_details": {
+    "thinking_tokens": 0
+   },
+   "service_tier": "standard",
+   "speed": "standard"
+  }
+ },
+ "error": null
+}

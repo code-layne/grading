@@ -1,0 +1,152 @@
+{
+ "key": "read-alg2-u3-l1-gs-TNEJN8-gs7",
+ "meta": {
+  "call_type": "read",
+  "crop_id": 47,
+  "tracking_id": "TNEJN8",
+  "assignment": "alg2-u3-l1-gs",
+  "question": "gs7",
+  "type": "short"
+ },
+ "request": {
+  "model": "claude-opus-5-5",
+  "max_tokens": 4096,
+  "output_config": {
+   "effort": "low"
+  },
+  "tools": [
+   {
+    "name": "record_reading",
+    "strict": true,
+    "description": "Record the transcription of one answer box.",
+    "input_schema": {
+     "type": "object",
+     "properties": {
+      "reading": {
+       "type": "string"
+      },
+      "latex": {
+       "type": "string"
+      },
+      "confidence": {
+       "type": "string",
+       "enum": [
+        "high",
+        "medium",
+        "low"
+       ]
+      },
+      "illegible": {
+       "type": "boolean"
+      }
+     },
+     "required": [
+      "reading",
+      "latex",
+      "confidence",
+      "illegible"
+     ],
+     "additionalProperties": false
+    }
+   }
+  ],
+  "tool_choice": {
+   "type": "auto",
+   "disable_parallel_tool_use": true
+  },
+  "system": [
+   {
+    "type": "text",
+    "text": "You transcribe handwritten answers for a math teacher. Each image is one answer box cropped from a scanned student quiz. The scan is thresholded: the background is white and pencil or pen is gray to black. The printed border of the box shows at the edges; anything outside it has been cut away.\n\nTranscribe exactly what the student wrote inside the box:\n- Do not solve the problem, correct a mistake, finish a partial answer, simplify, or reorder terms. A wrong answer is transcribed as written.\n- reading: plain-text math. Use ^ for exponents (x^2), / for fractions (3/2), sqrt(...) for roots, and the student's own signs and order. Keep any \"x =\" the student wrote. For written sentences, give the words as written, spelling included.\n- latex: the same content in LaTeX, with nothing added.\n- Ignore ink that is clearly crossed out. If two answers remain and you cannot tell which is final, transcribe both, separated by \" | \", and use low confidence.\n- confidence: high when you are certain of every character; medium when one character or sign could be read another way; low when more than that is uncertain.\n- illegible: true only when the answer cannot be read at all; then reading and latex are empty strings.\n- For a choice item the reading is the one capital letter the student wrote. If you see no letter, or more than one, set illegible true or confidence low.\n\nAnswer only by calling record_reading once.",
+    "cache_control": {
+     "type": "ephemeral"
+    }
+   }
+  ],
+  "messages": [
+   {
+    "role": "user",
+    "content": [
+     {
+      "type": "image",
+      "source": {
+       "type": "base64",
+       "media_type": "image/png",
+       "sha256": "9ea4f20860b6252c052ae1d4af466aabc95d53f3569f2cbf19ab4a7a0fc97eb3"
+      }
+     },
+     {
+      "type": "text",
+      "text": "Question gs7 is a short answer. Transcribe the answer in this box."
+     }
+    ]
+   }
+  ]
+ },
+ "fingerprint": "a953af8063489bf707f42a4e7e307091b51b4bc5a1139c615843789a898afebf",
+ "mode": "standard",
+ "batch_id": null,
+ "response": {
+  "id": "msg_011CgHq7UV8y2N3YnE5hfqkZ",
+  "container": null,
+  "content": [
+   {
+    "signature": "CAQS6gYKEAgTGAI4AUIIdGhpbmtpbmcSDAjureCk6RM0unsmTxoMe38vczp4MDNnLnYuIjAQrZRD6iIQAr6FDp9fGljS1nlG1ZjDyvqe26g+mepcTVn8e06RETpk54uR8AdS08sqhwblSZWGDycqcDzrlWCCNtBlZ9RPEbFA56YLu+sboEOXdGGKoFq+pD5KpM5JV/NsDL+FZ48gR8+WDzBPC6Gr4NCNSpxvtdttANBnNaUeQq5gFXoWziTjM7OMAXZfTVkMkqkzS3JfhRqJ4dT3A+7S6QdYZHNW1rBD6wMit99YVzLSwq0QHG8sTdLZ1I/lNXHaZsrImUT/Gn85jk9Ps9OXccEcJ4FwXbboPevlp/fbv873XrCF7OL5Q+x7hb3TrEPEZP/7QlLRRYzlvkejrtTpOqxhwYvmViwt1uLPVB24UjdwDlQZq0zleWuQGa+xu4YzCE7TavoaAY1cUjnaVgwazBId8wR5iT6KAOgMlDZUG/Gxfo45UXvTiZ0kuWQWhUGMmIgTBC0LfZPIKB+LyCdMxLq5nBwJpvezu+OvuQJaUgqW2BjAol+0f0/zZqIPj0Rhdz2LE8OuznujeCw00dNNh8Se03yt/ZlAeWkJxgJYX2WlFP1l77YbWtX+vxlIQEeVHApu0svP7TyFsJnu50GuY6rUKwDEX9fgNf+w8GvLGz1ux5o0e2fkGtKXELlMq8xHZTO+RfI8rYEspyZmDckPdohX8QKh1kzZNyo9P3+zrBaOEv1aUVVImrwi/YuKPm7LzEdV8gw4dpMRQBInHoPXZj5P7Oo8LTd9E19rQYQCxlLbDdkDoPp5RWxbMN0sfND0llVmAsyjk/MR3pFBv+iUJqGa0zM991HprUh7sF8ny1/hQpKHo4wzlI7/6H8/9R3ND/Hm/lmTpKrz+9Y0V3m8AsesifhcBPVey9CMOgZ2AFbhY8jzsiPgAgQzMpAGDH13mVZ+dt0ZFfv+FdTVg4TCdJEnUUZDmTqpOyf/bf5/M5jwxcVdROheTx/ncd1ZieFamTB0oczcz0t36i9inDkyvMOaWdplKDChvB8XruQC+aC+Uqv0JC6zjUHI4Hk4R3EdafpoMH3MsqHNq4Y+/13TSS2SDwGio2K7TBJ7oBbSW0kkaee0cqB+KyFWArYmmCyo0f6xQ9Zx5qjcGAE=",
+    "thinking": "",
+    "type": "thinking"
+   },
+   {
+    "id": "toolu_015vAQ7vsSR6NUTqFZQCx7fS",
+    "input": {
+     "reading": "5,3",
+     "latex": "5,3",
+     "confidence": "medium",
+     "illegible": false
+    },
+    "name": "record_reading",
+    "type": "tool_use",
+    "caller": {
+     "type": "direct"
+    }
+   }
+  ],
+  "diagnostics": null,
+  "model": "claude-opus-5-5",
+  "role": "assistant",
+  "stop_details": null,
+  "stop_reason": "tool_use",
+  "stop_sequence": null,
+  "type": "message",
+  "usage": {
+   "cache_creation": {
+    "ephemeral_1h_input_tokens": 0,
+    "ephemeral_5m_input_tokens": 0
+   },
+   "cache_creation_input_tokens": 0,
+   "cache_read_input_tokens": 835,
+   "inference_geo": "global",
+   "input_tokens": 236,
+   "iterations": [
+    {
+     "cache_creation": {
+      "ephemeral_1h_input_tokens": 0,
+      "ephemeral_5m_input_tokens": 0
+     },
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 835,
+     "input_tokens": 236,
+     "model": null,
+     "output_tokens": 236,
+     "type": "message"
+    }
+   ],
+   "output_tokens": 236,
+   "output_tokens_details": {
+    "thinking_tokens": 115
+   },
+   "service_tier": "standard",
+   "speed": "standard"
+  }
+ },
+ "error": null
+}

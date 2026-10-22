@@ -1,0 +1,176 @@
+{
+ "key": "read-alg2-u3-l1-gs-TNEJN8-gs1",
+ "meta": {
+  "call_type": "read",
+  "crop_id": 41,
+  "tracking_id": "TNEJN8",
+  "assignment": "alg2-u3-l1-gs",
+  "question": "gs1",
+  "type": "choice"
+ },
+ "request": {
+  "model": "claude-opus-5-5",
+  "max_tokens": 4096,
+  "output_config": {
+   "effort": "low"
+  },
+  "tools": [
+   {
+    "name": "record_reading",
+    "strict": true,
+    "description": "Record the transcription of one answer box.",
+    "input_schema": {
+     "type": "object",
+     "properties": {
+      "reading": {
+       "type": "string",
+       "enum": [
+        "A",
+        "B",
+        "C",
+        "D",
+        "E",
+        "F",
+        "G",
+        "H",
+        "I",
+        "J",
+        "K",
+        "L",
+        "M",
+        "N",
+        "O",
+        "P",
+        "Q",
+        "R",
+        "S",
+        "T",
+        "U",
+        "V",
+        "W",
+        "X",
+        "Y",
+        "Z",
+        ""
+       ]
+      },
+      "latex": {
+       "type": "string"
+      },
+      "confidence": {
+       "type": "string",
+       "enum": [
+        "high",
+        "medium",
+        "low"
+       ]
+      },
+      "illegible": {
+       "type": "boolean"
+      }
+     },
+     "required": [
+      "reading",
+      "latex",
+      "confidence",
+      "illegible"
+     ],
+     "additionalProperties": false
+    }
+   }
+  ],
+  "tool_choice": {
+   "type": "auto",
+   "disable_parallel_tool_use": true
+  },
+  "system": [
+   {
+    "type": "text",
+    "text": "You transcribe handwritten answers for a math teacher. Each image is one answer box cropped from a scanned student quiz. The scan is thresholded: the background is white and pencil or pen is gray to black. The printed border of the box shows at the edges; anything outside it has been cut away.\n\nTranscribe exactly what the student wrote inside the box:\n- Do not solve the problem, correct a mistake, finish a partial answer, simplify, or reorder terms. A wrong answer is transcribed as written.\n- reading: plain-text math. Use ^ for exponents (x^2), / for fractions (3/2), sqrt(...) for roots, and the student's own signs and order. Keep any \"x =\" the student wrote. For written sentences, give the words as written, spelling included.\n- latex: the same content in LaTeX, with nothing added.\n- Ignore ink that is clearly crossed out. If two answers remain and you cannot tell which is final, transcribe both, separated by \" | \", and use low confidence.\n- confidence: high when you are certain of every character; medium when one character or sign could be read another way; low when more than that is uncertain.\n- illegible: true only when the answer cannot be read at all; then reading and latex are empty strings.\n- For a choice item the reading is the one capital letter the student wrote. If you see no letter, or more than one, set illegible true or confidence low.\n\nAnswer only by calling record_reading once.",
+    "cache_control": {
+     "type": "ephemeral"
+    }
+   }
+  ],
+  "messages": [
+   {
+    "role": "user",
+    "content": [
+     {
+      "type": "image",
+      "source": {
+       "type": "base64",
+       "media_type": "image/png",
+       "sha256": "93f2d1d32520b7f47422774f11b430097c6cdbf90040dc12431d05d20e258c3c"
+      }
+     },
+     {
+      "type": "text",
+      "text": "Question gs1 is a multiple-choice or matching item (one letter). Transcribe the answer in this box."
+     }
+    ]
+   }
+  ]
+ },
+ "fingerprint": "bfdf10833f434f656342f733da2cfa74ca524f20b2d7d5a878d12505c033d241",
+ "mode": "standard",
+ "batch_id": null,
+ "response": {
+  "id": "msg_011CgHq6Jd3VvjMLdf9NDnnA",
+  "container": null,
+  "content": [
+   {
+    "id": "toolu_01R2WDrbWVVxbHcs3xw8msoH",
+    "input": {
+     "reading": "B",
+     "latex": "B",
+     "confidence": "high",
+     "illegible": false
+    },
+    "name": "record_reading",
+    "type": "tool_use",
+    "caller": {
+     "type": "direct"
+    }
+   }
+  ],
+  "diagnostics": null,
+  "model": "claude-opus-5-5",
+  "role": "assistant",
+  "stop_details": null,
+  "stop_reason": "tool_use",
+  "stop_sequence": null,
+  "type": "message",
+  "usage": {
+   "cache_creation": {
+    "ephemeral_1h_input_tokens": 0,
+    "ephemeral_5m_input_tokens": 0
+   },
+   "cache_creation_input_tokens": 0,
+   "cache_read_input_tokens": 924,
+   "inference_geo": "global",
+   "input_tokens": 156,
+   "iterations": [
+    {
+     "cache_creation": {
+      "ephemeral_1h_input_tokens": 0,
+      "ephemeral_5m_input_tokens": 0
+     },
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 924,
+     "input_tokens": 156,
+     "model": null,
+     "output_tokens": 115,
+     "type": "message"
+    }
+   ],
+   "output_tokens": 115,
+   "output_tokens_details": {
+    "thinking_tokens": 0
+   },
+   "service_tier": "standard",
+   "speed": "standard"
+  }
+ },
+ "error": null
+}
