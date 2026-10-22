@@ -68,3 +68,28 @@ def test_newer_database_is_refused(tmp_path):
     conn.close()
     with pytest.raises(RuntimeError, match="newer"):
         db.connect(tmp_path / "g.sqlite")
+
+
+def test_version_3_batches_survive_the_migration_and_can_be_canceled(tmp_path):
+    import sqlite3
+
+    from grading import db
+    path = tmp_path / "grading.sqlite"
+    old = sqlite3.connect(path)
+    old.executescript(db.SCHEMA)
+    for n in (2, 3):
+        for stmt in db._statements(db.MIGRATIONS[n]):
+            old.execute(stmt)
+    old.execute("INSERT INTO meta VALUES ('schema_version', '3')")
+    old.execute("INSERT INTO batches VALUES ('msgbatch_01', '2026-10-22T08:00:00', '[]', 'in_progress', NULL)")
+    old.commit()
+    old.close()
+
+    conn = db.connect(path)
+    row = conn.execute("SELECT * FROM batches").fetchone()
+    assert (row["id"], row["status"], row["canceled_at"]) == ("msgbatch_01", "in_progress", None)
+    conn.execute("UPDATE batches SET status = 'canceling', canceled_at = '2026-10-22T10:04:00'")
+    conn.execute("UPDATE batches SET status = 'canceled'")
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute("UPDATE batches SET status = 'lost'")
+    conn.close()

@@ -25,10 +25,13 @@ settle() rather than writing scores itself.
 The work runs in rounds: each round sends every call whose inputs exist
 (round 1 the reads, round 2 the rubric calls and the choice and short
 verifies, round 3 the rubric verifies). A run over more than
-api.batch_threshold crops sends each round as one Batch API batch; the batch
-id is stored, so a rerun after an interruption collects that batch instead
-of submitting it again. Everything is stored as it arrives, so a rerun only
-sends what is still missing.
+api.batch_threshold crops sends each round as one Batch API batch (--now
+sends any run through the standard API, --batch any run through the Batch
+API); the batch id is stored, so a rerun after an interruption collects that
+batch instead of submitting it again. Everything is stored as it arrives, so
+a rerun only sends what is still missing. `grading batch cancel` stops a
+batch still running and stores the results it has; the requests that never
+ran come back canceled and are sent again by the next run.
 """
 
 import datetime as dt
@@ -55,6 +58,24 @@ class CostRefused(Exception):
 
 class Cancelled(Exception):
     pass
+
+
+class BatchPending(Exception):
+    """A --now run found a batch that has not ended: sending its requests
+    through the standard API too would pay for them twice."""
+
+    def __init__(self, batch_id, status):
+        self.batch_id, self.status = batch_id, status
+        super().__init__(f"batch {batch_id} is {status.replace('_', ' ')}")
+
+
+HEARTBEAT_SECONDS = 300   # a poll line at least this often, even when nothing changed
+
+
+def elapsed(seconds: float) -> str:
+    """2h 04m, or 12m under an hour."""
+    h, m = divmod(int(max(seconds, 0)) // 60, 60)
+    return f"{h}h {m:02d}m" if h else f"{m}m"
 
 
 @dataclass
@@ -105,13 +126,19 @@ def _now():
 
 class Pipeline:
     def __init__(self, cfg, conn, transport, *, confirm=None, wait=True, out=print, sleep=time.sleep,
-                 force_mode: str | None = None):
+                 clock=dt.datetime.now, force_mode: str | None = None, on_wait=()):
+        """force_mode: "standard" (--now) or "batch" (--batch); None follows
+        api.batch_threshold. on_wait: lines printed under the first poll
+        line of a batch this run waits for (how to resume it)."""
         self.cfg, self.conn, self.transport = cfg, conn, transport
         self.confirm = confirm
         self.wait = wait
         self.out = out
         self.sleep = sleep
+        self.clock = clock
         self.force_mode = force_mode
+        self.on_wait = list(on_wait)
+        self._hinted = False
         self._rubrics = {}
         self._attempted = set()   # keys that failed in this run: retried on the next run, not this one
 
@@ -391,16 +418,21 @@ class Pipeline:
         with self.conn:
             self.conn.execute("INSERT INTO batches (id, submitted_at, request_keys, status) "
                               "VALUES (?, ?, ?, 'in_progress')",
-                              (batch_id, _now(), json.dumps([[k, ct, it.crop_id] for ct, it, k in plan])))
+                              (batch_id, self.clock().isoformat(timespec="seconds"),
+                               json.dumps([[k, ct, it.crop_id] for ct, it, k in plan])))
         self.out(f"submitted batch {batch_id}: {len(plan)} requests")
         return self._collect(batch_id, s, summary, by_crop)
 
-    def _collect(self, batch_id, s, summary, by_crop) -> bool:
+    def _collect(self, batch_id, s, summary, by_crop, wait=None) -> bool:
         """Wait for a batch to end and store its results. False when not
-        waiting and it hasn't ended yet."""
+        waiting and it hasn't ended yet. A poll line goes out whenever the
+        count changes and at least every HEARTBEAT_SECONDS, with the time
+        since the batch was submitted."""
+        wait = self.wait if wait is None else wait
         row = self.conn.execute("SELECT * FROM batches WHERE id = ?", (batch_id,)).fetchone()
         wanted = {k: (ct, cid) for k, ct, cid in json.loads(row["request_keys"])}
-        last = None
+        submitted = dt.datetime.fromisoformat(row["submitted_at"])
+        last, last_at = None, None
         while True:
             st = self.transport.batch_status(batch_id)
             if st["status"] == "ended":
@@ -408,13 +440,18 @@ class Pipeline:
             counts = st.get("counts") or {}
             done = sum(v for k, v in counts.items() if k != "processing")
             line = f"batch {batch_id}: {st['status']}, {done} of {len(wanted)} done"
-            if line != last or not self.wait:
-                self.out(line)
-                last = line
-            if not self.wait:
+            now = self.clock()
+            if line != last or not wait or (now - last_at).total_seconds() >= HEARTBEAT_SECONDS:
+                self.out(f"{line}, {elapsed((now - submitted).total_seconds())}")
+                last, last_at = line, now
+                if wait and not self._hinted:
+                    for hint in self.on_wait:
+                        self.out("  " + hint)
+                    self._hinted = True
+            if not wait:
                 summary.batch_pending = batch_id
                 return False
-            self.sleep(self.cfg.api.batch_poll_seconds)
+            self.sleep(min(self.cfg.api.batch_poll_seconds, HEARTBEAT_SECONDS))
         seen = set()
         with self.conn:
             for outcome in self.transport.batch_results(batch_id):
@@ -428,9 +465,37 @@ class Pipeline:
                 self.apply(outcome, call_type, it, s)
                 summary.calls[call_type] += 1
             self._attempted.update(set(wanted) - seen)  # no result: send again on the next run
-            self.conn.execute("UPDATE batches SET status = 'collected', collected_at = ? WHERE id = ?",
-                              (_now(), batch_id))
+            self.conn.execute("UPDATE batches SET status = CASE status WHEN 'canceling' THEN 'canceled' "
+                              "ELSE 'collected' END, collected_at = ? WHERE id = ?", (_now(), batch_id))
         return True
+
+    def cancel_batches(self) -> list[dict]:
+        """grading batch cancel: cancel every batch still running, wait for
+        each to end, and store the results that came in before the cancel.
+        The requests that never ran are recorded as canceled, which is not
+        terminal, so the next run sends exactly those (--now: through the
+        standard API). A batch that had already ended is just collected."""
+        items = self.items()
+        by_crop = {it.crop_id: it for it in items}
+        rows = self.conn.execute("SELECT id, status FROM batches WHERE status IN ('in_progress', 'canceling') "
+                                 "ORDER BY submitted_at").fetchall()
+        for row in rows:
+            if row["status"] == "in_progress" and self.transport.batch_status(row["id"])["status"] != "ended":
+                self.transport.batch_cancel(row["id"])
+                with self.conn:
+                    self.conn.execute("UPDATE batches SET status = 'canceling', canceled_at = ? WHERE id = ?",
+                                      (_now(), row["id"]))
+                self.out(f"canceling batch {row['id']}")
+        out = []
+        for row in rows:
+            self._collect(row["id"], self._state(), Summary(), by_crop, wait=True)
+            status = self.conn.execute("SELECT status FROM batches WHERE id = ?", (row["id"],)).fetchone()[0]
+            got = {r[0]: r[1] for r in self.conn.execute(
+                "SELECT status, count(*) FROM api_calls WHERE batch_id = ? GROUP BY status", (row["id"],))}
+            out.append({"id": row["id"], "status": status, "canceled": got.pop("canceled", 0),
+                        "results": sum(got.values())})
+        self._finish(items, Summary())
+        return out
 
     # ---- the run ---------------------------------------------------------
 
@@ -439,12 +504,21 @@ class Pipeline:
         by_crop = {it.crop_id: it for it in items}
         summary = Summary()
 
-        for row in self.conn.execute("SELECT id FROM batches WHERE status = 'in_progress' ORDER BY submitted_at"
-                                     ).fetchall():
+        now_only = self.force_mode == "standard"
+        for row in self.conn.execute("SELECT id, status FROM batches WHERE status IN ('in_progress', 'canceling') "
+                                     "ORDER BY submitted_at").fetchall():
             self.out(f"resuming batch {row['id']}")
             summary.mode = "batch"
-            if not self._collect(row["id"], self._state(), summary, by_crop):
-                return self._finish(items, summary)
+            # --now never waits on the batch queue: a batch that has ended is
+            # collected, one that hasn't stops the run.
+            if not self._collect(row["id"], self._state(), summary, by_crop, wait=self.wait and not now_only):
+                self._finish(items, summary)
+                if now_only:
+                    raise BatchPending(row["id"], row["status"])
+                return summary
+            # Requests canceled before this run never ran: send them now.
+            self._attempted -= {r[0] for r in self.conn.execute(
+                "SELECT request_key FROM api_calls WHERE batch_id = ? AND status = 'canceled'", (row["id"],))}
 
         s = self._state()
         todo = [it for it in items if self._needs_work(it, s)]
@@ -456,7 +530,10 @@ class Pipeline:
             est = self.estimate(items, s, mode)
             summary.estimate = est
             if self.transport.live:
-                self._guard(est, len(todo))
+                other = None
+                if self.transport.supports_batch:
+                    other = self.estimate(items, s, "standard" if mode == "batch" else "batch")
+                self._guard(est, len(todo), other)
 
         while True:
             s = self._state()
@@ -466,9 +543,21 @@ class Pipeline:
             if mode == "batch":
                 if not self._send_batch(plan, s, summary, by_crop):
                     break
+                if self._canceled_while_waiting():
+                    break
             else:
                 self._send_standard(plan, s, summary)
         return self._finish(items, summary)
+
+    def _canceled_while_waiting(self) -> bool:
+        """`grading batch cancel` ran while this run waited on its batch: stop
+        rather than submit the next round."""
+        row = self.conn.execute("SELECT id, status FROM batches ORDER BY submitted_at DESC, rowid DESC LIMIT 1"
+                                ).fetchone()
+        if row["status"] != "canceled":
+            return False
+        self.out(f"batch {row['id']} was canceled; stopping here")
+        return True
 
     def _needs_work(self, it, s):
         r = s["readings"].get((it.crop_id, "read"))
@@ -477,15 +566,24 @@ class Pipeline:
         return (not r["illegible"] and (it.crop_id, "verify") not in s["readings"]
                 and not self._no_verify(it, s, self.first_score(it, s)))
 
-    def _guard(self, est, n_crops):
+    def _guard(self, est, n_crops, other=None):
+        """other: the same run through the other API, priced for comparison."""
         api = self.cfg.api
-        self.out(f"{n_crops} crops to grade, {est.mode} API, estimated (no cache hits assumed):")
+        how = {"batch": "the Batch API at half price: most batches finish within an hour, "
+                        "but one can take up to 24 hours",
+               "standard": "the standard API at full price: results as each call returns"}
+        self.out(f"{n_crops} crops to grade through {how[est.mode]}. Estimated (no cache hits assumed):")
         for line in est.lines():
             self.out("  " + line)
+        if other is not None:
+            flag, name = ("--now", "standard API") if est.mode == "batch" else ("--batch", "Batch API")
+            self.out(f"  with {flag} ({name}): about ${other.total_usd:.2f}")
         if est.total_usd > api.max_run_usd:
             raise CostRefused(f"estimated ${est.total_usd:.2f} is above api.max_run_usd (${api.max_run_usd:.2f}); "
                               "grade fewer crops at a time or raise the ceiling")
-        if self.confirm is None or not self.confirm(f"Send {est.total_calls} calls, about ${est.total_usd:.2f}?"):
+        api_name = "Batch API" if est.mode == "batch" else "standard API"
+        if self.confirm is None or not self.confirm(
+                f"Send {est.total_calls} calls through the {api_name}, about ${est.total_usd:.2f}?"):
             raise Cancelled("cancelled; nothing was sent")
 
     # ---- outcome ---------------------------------------------------------
