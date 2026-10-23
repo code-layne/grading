@@ -54,12 +54,13 @@ def test_unknown_setting_is_an_error(tmp_path):
 def test_api_settings_and_prices(tmp_path):
     raw = paths(tmp_path)
     raw["api"] = {"read_model": "claude-sonnet-5-5", "batch_threshold": 40, "max_run_usd": 3,
-                  "refusal_fallback": False}
+                  "refusal_fallback": False, "concurrency": 4}
     raw["prices"] = {"claude-sonnet-5-5": {"input": 2, "output": 10, "cache_write_5m": 2.5,
                                            "cache_write_1h": 4, "cache_read": 0.1}}
     cfg = config.from_dict(raw)
     assert cfg.api.read_model == "claude-sonnet-5-5" and cfg.api.judge_model == "claude-opus-5-5"
     assert cfg.api.batch_threshold == 40 and cfg.api.max_run_usd == 3.0 and cfg.api.refusal_fallback is False
+    assert cfg.api.concurrency == 4 and config.ApiSettings().concurrency == 8
     assert cfg.prices["claude-sonnet-5-5"].cache_read == 0.1
     assert cfg.prices["claude-opus-5-5"].input == 4.0
 
@@ -68,6 +69,7 @@ def test_api_settings_and_prices(tmp_path):
     ("api", {"read_effort": "extreme"}, "read_effort"),
     ("api", {"refusal_fallback": "yes"}, "true or false"),
     ("api", {"batch_treshold": 5}, "batch_treshold"),
+    ("api", {"concurrency": 0}, "at least 1"),
     ("prices", {"claude-opus-5-5": {"input": 4}}, "needs exactly"),
 ])
 def test_bad_api_settings(tmp_path, section, value, match):

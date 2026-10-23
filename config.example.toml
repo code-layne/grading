@@ -41,6 +41,9 @@ judge_max_tokens = 8192
 # --batch override this for one run.
 batch_threshold = 20
 batch_poll_seconds = 30
+# Standard API calls in flight at once. A 429 or an overloaded error makes
+# the run wait out the Retry-After, then halves this for the rest of the run.
+concurrency = 8
 # A live run estimated above this many dollars is refused outright.
 max_run_usd = 10.0
 # Standard calls only: a request the safety classifier declines is retried
@@ -48,6 +51,7 @@ max_run_usd = 10.0
 refusal_fallback = true
 # The Keychain item holding the API key (else $ANTHROPIC_API_KEY).
 keychain_service = "anthropic-grading"
+# How many times a call that hit a connection error or a 5xx is sent again.
 max_retries = 4
 # Output tokens per call that the cost estimate assumes (thinking included).
 # Tune them from the token report of `grading eval`.

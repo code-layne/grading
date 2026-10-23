@@ -21,10 +21,12 @@ import base64
 import csv
 import hashlib
 import json
+import threading
+import time
 from pathlib import Path
 
 from . import costs, prompts
-from .apiclient import Outcome, Transport
+from .apiclient import Outcome, RateLimited, Transport
 
 DEFAULT_FAULTS = {
     "illegible": ("GV2GN5", "gs6"),
@@ -46,12 +48,17 @@ def criteria_of(row) -> dict:
 
 class FakeTransport(Transport):
     def __init__(self, expected_csv: Path, faults: dict | None = None, *, live=False, store=None,
-                 polls_before_end=1, overrides=None, refuse=(), fail_once=(), ran_before_cancel=0):
+                 polls_before_end=1, overrides=None, refuse=(), fail_once=(), ran_before_cancel=0,
+                 delay=0.0, rate_limit=0, retry_after=2.0):
         """overrides: {(tracking id, question): reading} for both passes.
         ran_before_cancel: how many of a batch's requests had run when it was
         canceled; the rest come back canceled.
         refuse: {(tracking id, question, call type)} answered with a refusal.
-        fail_once: the same, answered with a transient error the first time."""
+        fail_once: the same, answered with a transient error the first time.
+        delay: seconds each standard call takes, so that calls overlap.
+        rate_limit: how many standard calls in a row, from the first, are
+        answered with a 429 carrying retry_after (a storm), before any
+        succeeds. Standard calls may come from several threads at once."""
         self.expected = load_expected(expected_csv)
         self.faults = DEFAULT_FAULTS if faults is None else faults
         self.overrides = overrides or {}
@@ -66,8 +73,15 @@ class FakeTransport(Transport):
         self.store.setdefault("prefixes", set())
         self.store.setdefault("requests", [])
         self.store.setdefault("failed_once", set())
+        self.store.setdefault("rate_limited", 0)
+        self.store.setdefault("in_flight", 0)
+        self.store.setdefault("max_in_flight", 0)
         self.polls_before_end = polls_before_end
         self.ran_before_cancel = ran_before_cancel
+        self.delay = delay
+        self.rate_limit = rate_limit
+        self.retry_after = retry_after
+        self._lock = threading.Lock()
 
     def _is(self, fault, meta):
         return self.faults.get(fault) == (meta["tracking_id"], meta["question"])
@@ -122,11 +136,12 @@ class FakeTransport(Transport):
 
     def _outcome(self, key, params, meta, mode="standard", batch_id=None):
         which = (meta["tracking_id"], meta["question"], meta["call_type"])
-        if which in self.fail_once and which not in self.store["failed_once"]:
-            self.store["failed_once"].add(which)
-            self.store["requests"].append(key)
-            return Outcome(key, None, "errored overloaded_error", mode=mode, batch_id=batch_id)
-        return Outcome(key, self._message(key, params, meta), mode=mode, batch_id=batch_id)
+        with self._lock:
+            if which in self.fail_once and which not in self.store["failed_once"]:
+                self.store["failed_once"].add(which)
+                self.store["requests"].append(key)
+                return Outcome(key, None, "errored overloaded_error", mode=mode, batch_id=batch_id)
+            return Outcome(key, self._message(key, params, meta), mode=mode, batch_id=batch_id)
 
     def _message(self, key, params, meta):
         call_type = meta["call_type"]
@@ -145,7 +160,23 @@ class FakeTransport(Transport):
                 "stop_reason": "tool_use", "stop_sequence": None, "usage": usage}
 
     def create(self, key, params, meta):
-        return self._outcome(key, params, meta)
+        with self._lock:
+            self.store["in_flight"] += 1
+            self.store["max_in_flight"] = max(self.store["max_in_flight"], self.store["in_flight"])
+            if self.rate_limit and self.store["rate_limited"] >= self.rate_limit:
+                self.store["max_in_flight_after_storm"] = max(self.store.get("max_in_flight_after_storm", 0),
+                                                              self.store["in_flight"])
+        try:
+            if self.delay:
+                time.sleep(self.delay)
+            with self._lock:
+                if self.store["rate_limited"] < self.rate_limit:
+                    self.store["rate_limited"] += 1
+                    raise RateLimited("rate limited (429)", self.retry_after)
+            return self._outcome(key, params, meta)
+        finally:
+            with self._lock:
+                self.store["in_flight"] -= 1
 
     def batch_submit(self, items):
         self.store["submissions"] += 1

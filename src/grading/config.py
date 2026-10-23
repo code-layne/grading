@@ -57,6 +57,9 @@ class ApiSettings:
     # --batch override it for one run.
     batch_threshold: int = 20
     batch_poll_seconds: int = 30
+    # Standard API calls in flight at once. A 429 or an overloaded error
+    # halves it for the rest of the run, down to one.
+    concurrency: int = 8
     # A live run whose estimate is above this many dollars is refused.
     max_run_usd: float = 10.0
     # Standard calls only (the Batch API rejects it): a request the model's
@@ -168,6 +171,8 @@ def from_dict(raw: dict, base: Path = Path("."), source: Path | None = None) -> 
     for key in ("read_effort", "judge_effort"):
         if getattr(cfg.api, key) not in EFFORTS:
             raise ConfigError(f"api.{key} must be one of {', '.join(EFFORTS)}")
+    if cfg.api.concurrency < 1:
+        raise ConfigError("api.concurrency must be at least 1")
     for model, entry in raw.get("prices", {}).items():
         fields = Price.__dataclass_fields__
         if not isinstance(entry, dict) or set(entry) != set(fields):
