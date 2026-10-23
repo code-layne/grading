@@ -5,13 +5,17 @@ For each page of a scan:
   1. render at the configured dpi (300)
   2. decode the QR code: assignment | page | tracking id
   3. find the four registration marks and fit the transform to the manifest
-  4. warp the page onto the manifest's layout and blank the name strip
+  4. warp the page onto the manifest's layout and blank the strip (the
+     tracking id; on packets printed before cover sheets, the name)
   5. crop each answer box with a small margin, threshold it, and mark it
      blank when it holds almost no ink
 
-A page that can't be placed goes to the unplaced queue (stored strip-blanked
-too). A second copy of a page already placed for the same student and
-assignment is stored and flagged as a duplicate; it never replaces the first.
+A cover sheet (the one sheet with a student's name) is skipped: nothing of it
+is stored but its page number in the scan and the reason, in
+scans.skipped_pages. A page that can't be placed goes to the unplaced queue
+(stored strip-blanked too). A second copy of a page already placed for the
+same student and assignment is stored and flagged as a duplicate; it never
+replaces the first.
 """
 
 import datetime as dt
@@ -94,12 +98,17 @@ def ingest_file(cfg, pdf: Path, conn=None, manifests=None, received_on: dt.date 
             result.skipped = True
             return result
         with conn:  # one transaction per scan
-            pages = list(scan.render_pages(pdf, settings.dpi))
             scan_id = conn.execute(
                 "INSERT INTO scans (sha256, filename, page_count, ingested_at, received_on) "
-                "VALUES (?, ?, ?, ?, ?)", (sha, pdf.name, len(pages), now, received)).lastrowid
-            for n, gray in enumerate(pages, start=1):
+                "VALUES (?, ?, ?, ?, ?)", (sha, pdf.name, scan.page_count(pdf), now, received)).lastrowid
+            # One page in memory at a time, so a cover sheet's image is gone
+            # before the next page is rendered.
+            for n, gray in enumerate(scan.render_pages(pdf, settings.dpi), start=1):
                 result.pages.append(_ingest_page(cfg, conn, manifests, scan_id, sha, n, gray, received, now))
+                del gray
+            skipped = [{"scan_page": p.scan_page, "reason": p.reason} for p in result.pages if p.status == "skipped"]
+            if skipped:
+                conn.execute("UPDATE scans SET skipped_pages = ? WHERE id = ?", (json.dumps(skipped), scan_id))
     finally:
         if own:
             conn.close()
@@ -111,6 +120,8 @@ def _ingest_page(cfg, conn, manifests, scan_id, sha, n, gray, received, now) -> 
     page_rel = f"pages/{sha[:12]}/{n:03d}.png"
     try:
         placed = scan.place_page(gray, manifests, settings)
+    except scan.CoverPage:
+        return PageResult(n, "skipped", reason="cover")
     except scan.PlacementError as e:
         _write_png(data, page_rel, scan.unplaced_image(gray, settings))
         page_id = conn.execute(

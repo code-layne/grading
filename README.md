@@ -18,7 +18,9 @@ From a stack of packets to stapled feedback sheets:
    double-sided) to the inbox. Order and orientation don't matter.
 2. **Ingest**: `grading ingest`. Pass `--received 2026-10-20` if the papers
    came in on another day. It prints how many pages were placed; anything
-   unplaced waits for step 5.
+   unplaced waits for step 5. It also says how many cover sheets went through
+   the scanner (they are skipped, nothing stored): pull covers from the stack
+   before scanning.
 3. **Read, score and verify**: `grading read --now` when you are waiting on
    the results. It shows the number of calls, which API they go through and
    the estimated cost, and asks before sending anything. Without `--now` a
@@ -33,7 +35,8 @@ From a stack of packets to stapled feedback sheets:
    same answer from any other student, now or later, is scored the same way.
 5. **Unplaced pages** (`u` in review): for a page whose QR code couldn't be
    read, find it in the paper stack (`grading status` names the scan file
-   and page), look up the student's tracking id in roster-map.csv, and place
+   and page), read the tracking id off its strip (`ID: …`; on a packet
+   printed before cover sheets, look the name up in roster-map.csv), and place
    it. Then run `grading read` again to grade it.
 6. **Report**: `grading report`. It refuses while anything is still in
    review; `--partial` reports anyway and marks what it left out. It writes
@@ -85,7 +88,8 @@ image, database and CSV, with the test fixtures as the only exception.
 ## Scanning
 
 Copier settings: 300 dpi, grayscale or color, one PDF per stack, and duplex
-when the packets are printed double-sided. Pages can come in any order, a late
+when the packets are printed double-sided. Take the cover sheets off first:
+the cover is the only sheet with the student's name. Pages can come in any order, a late
 paper can be scanned alone or mixed into another stack, and a page fed upside
 down is fine.
 
@@ -102,6 +106,14 @@ Each page of each scan goes through these steps:
 
 1. **Render** at 300 dpi with PyMuPDF.
 2. **Read the QR code** with zxing-cpp. It encodes `assignment|page|tracking id`.
+   - A **cover sheet**'s code (`COVER|assignment|tracking id`, where a graded
+     page's code sits, with no registration marks) means the page is
+     skipped: the image is dropped as soon as the code is read, and nothing
+     is stored but its page number in the scan and the reason, in
+     `scans.skipped_pages` (`[{"scan_page": 4, "reason": "cover"}]`), not
+     even the code's text. Any code starting `COVER|`, anywhere on a page,
+     skips it, since a page that shows a cover could show its name. The ingest summary and
+     `grading status` count skipped covers.
    - Decoding runs on the thresholded page, so show-through from the other
      side of the sheet, which never reaches the ink threshold, can't be read.
    - The page's code must also sit where its manifest puts the QR code. A
@@ -113,8 +125,10 @@ Each page of each scan goes through these steps:
    mark's size, nearest each corner. A least-squares affine fit maps the
    manifest's layout onto the scan, correcting skew, copier scaling and
    offset. The fit's residual is checked.
-5. **Warp the page onto the manifest's layout and blank the name strip.**
-   Nothing is stored before this, so no stored image holds a name.
+5. **Warp the page onto the manifest's layout and blank the strip.** The
+   strip prints `ID: <tracking id>` (packets printed before cover sheets
+   carry the name there), and it is blanked either way. Nothing is stored
+   before this, so no stored image holds a name.
 6. **Crop each answer box** with a 6 pt margin.
    - Paper feed is not perfectly even: the Brother test scan has a box 1.7 pt
      off the affine estimate. So each edge of the box is matched to its
@@ -135,7 +149,7 @@ stored as a **duplicate**, linked to the first copy and flagged. It never
 replaces the first. A scan PDF already ingested (same SHA-256) is skipped.
 
 The scan PDFs themselves are never copied into the data folder, because they
-carry names. They stay in `<inbox>/ingested/` until you delete them.
+can carry names (a cover sheet, an older packet's strip). They stay in `<inbox>/ingested/` until you delete them.
 
 ## Read, score and verify
 
@@ -468,6 +482,14 @@ pytest
   - the damaged page goes to the unplaced queue, strip-blanked;
   - every one of the 96 crops lands within 2 px (0.5 pt) of its box border;
   - exactly the one blank answer in `expected-scores.csv` is marked blank.
+- **Cover sheets** (`test_covers.py`): the class set with a cover rendered
+  from a generated PDF (an invented name and a `COVER` code) as scan page 4:
+  - no file under the data folder and no text in the database holds the
+    name or the cover code, and no page image is stored for it;
+  - `scans.skipped_pages` records page 4 as a cover, and the ingest summary
+    and `grading status` count it;
+  - the other 12 pages are placed on the right students, all 96 crops cut;
+  - a cover code is recognized either way up, and with any tail (`MASTER`).
 - **Real scan** (`tests/fixtures/real`, a Brother inkjet scan with
   show-through; see its README):
   - all three pages are placed, in reverse roster order;

@@ -25,16 +25,26 @@ from .rubrics import RubricError
 
 
 def _report(results):
+    covers = 0
     for r in results:
         if r.skipped:
             print(f"{r.path.name}: already ingested, skipped")
             continue
         print(f"{r.path.name}: {len(r.pages)} pages, {r.count('placed')} placed, "
-              f"{r.count('duplicate')} duplicate, {r.count('unplaced')} unplaced")
+              f"{r.count('duplicate')} duplicate, {r.count('unplaced')} unplaced, "
+              f"{r.count('skipped')} cover {_pages(r.count('skipped'))} skipped")
+        covers += r.count("skipped")
         for p in r.pages:
             if p.status != "placed":
                 where = f" ({p.tracking_id} {p.assignment} p{p.page})" if p.tracking_id else ""
                 print(f"  page {p.scan_page}: {p.status}, {p.reason}{where}")
+    if covers:
+        print(f"{covers} cover {_pages(covers)} went through the scanner and {'was' if covers == 1 else 'were'} "
+              "skipped, nothing stored: pull covers from the stack before scanning")
+
+
+def _pages(n):
+    return "page" if n == 1 else "pages"
 
 
 def cmd_ingest(cfg, args):
@@ -65,6 +75,10 @@ def cmd_status(cfg, args):
     try:
         for row in conn.execute("SELECT status, count(*) AS n FROM pages GROUP BY status ORDER BY status"):
             print(f"{row['status']:10} {row['n']}")
+        covers = conn.execute("SELECT count(*) FROM scans, json_each(scans.skipped_pages) "
+                              "WHERE json_each.value ->> 'reason' = 'cover'").fetchone()[0]
+        print(f"{'covers':10} {covers} skipped" + (", nothing stored: pull covers from the stack before scanning"
+                                                     if covers else ""))
         blanks = conn.execute("SELECT count(*) FROM crops WHERE blank = 1 AND blank_confirmed IS NULL").fetchone()[0]
         print(f"{'blank':10} {blanks} crops to confirm")
         scored = conn.execute("SELECT count(*) FROM scores WHERE status = 'final'").fetchone()[0]
