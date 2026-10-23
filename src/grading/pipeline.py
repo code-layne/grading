@@ -22,16 +22,26 @@ alone (source 'review') is never recomputed. So the scores and the queue are
 always what these inputs give, and review settles items by calling
 settle() rather than writing scores itself.
 
-The work runs in rounds: each round sends every call whose inputs exist
-(round 1 the reads, round 2 the rubric calls and the choice and short
-verifies, round 3 the rubric verifies). A run over more than
-api.batch_threshold crops sends each round as one Batch API batch (--now
-sends any run through the standard API, --batch any run through the Batch
-API); the batch id is stored, so a rerun after an interruption collects that
-batch instead of submitting it again. Everything is stored as it arrives, so
-a rerun only sends what is still missing. `grading batch cancel` stops a
-batch still running and stores the results it has; the requests that never
-ran come back canceled and are sent again by the next run.
+A run over more than api.batch_threshold crops goes through the Batch API
+(--now sends any run through the standard API, --batch any run through the
+Batch API). There the work runs in rounds, one batch each: every call whose
+inputs exist (round 1 the reads, round 2 the rubric calls and the choice and
+short verifies, round 3 the rubric verifies). The batch id is stored, so a
+rerun after an interruption collects that batch instead of submitting it
+again. `grading batch cancel` stops a batch still running and stores the
+results it has; the requests that never ran come back canceled and are sent
+again by the next run.
+
+Through the standard API, up to api.concurrency calls are in flight at once
+(standard.py), and a crop's rubric and verify calls go out as soon as its
+read is stored, while other crops are still being read. Each result is
+stored as it comes back, on this thread alone. The calls made, and so the
+rows stored and the recording, are the same whatever the order: a shared
+rubric call is made on the group's first crop, and only once every earlier
+crop of that question has been read, exactly as the rounds would make it.
+
+Everything is stored as it arrives, so a rerun only sends what is still
+missing.
 """
 
 import datetime as dt
@@ -42,11 +52,12 @@ import sys
 import time
 from dataclasses import dataclass, field
 
-from . import checks, costs, prompts, rubrics
+from . import checks, costs, prompts, rubrics, standard
 from .apiclient import Outcome
 from .manifests import ManifestError
 
 TERMINAL = {"refusal", "truncated", "no-tool-call", "invalid"}  # retrying won't help
+PASS_ORDER = {"read": 0, "rubric": 1, "verify": 2}
 PRIORITY = {"verify-disagreement": 0, "illegible": 1, "unparseable": 1, "not-a-letter": 1, "not-a-number": 1,
             "read-failed": 1, "rubric-failed": 1, "verify-failed": 1, "reading-corrected": 1,
             "low-confidence": 2, "rubric": 3, "blank": 4}
@@ -126,10 +137,11 @@ def _now():
 
 class Pipeline:
     def __init__(self, cfg, conn, transport, *, confirm=None, wait=True, out=print, sleep=time.sleep,
-                 clock=dt.datetime.now, force_mode: str | None = None, on_wait=()):
+                 clock=dt.datetime.now, force_mode: str | None = None, on_wait=(), on_stop=()):
         """force_mode: "standard" (--now) or "batch" (--batch); None follows
         api.batch_threshold. on_wait: lines printed under the first poll
-        line of a batch this run waits for (how to resume it)."""
+        line of a batch this run waits for (how to resume it). on_stop: the
+        same for a run through the standard API (what Ctrl-C does)."""
         self.cfg, self.conn, self.transport = cfg, conn, transport
         self.confirm = confirm
         self.wait = wait
@@ -138,8 +150,11 @@ class Pipeline:
         self.clock = clock
         self.force_mode = force_mode
         self.on_wait = list(on_wait)
+        self.on_stop = list(on_stop)
         self._hinted = False
         self._rubrics = {}
+        self._checked = {}        # (assignment, question, reading) -> checks.Check
+        self._groups_sent = set() # rubric groups whose call went out in this run (standard API)
         self._attempted = set()   # keys that failed in this run: retried on the next run, not this one
 
     # ---- state -----------------------------------------------------------
@@ -217,10 +232,13 @@ class Pipeline:
         if ruling is not None:
             return {"points": ruling["points"], "source": "ruling", "feedback": ruling["feedback"]}
         if item.qtype in ("choice", "short"):
-            try:
-                chk = checks.score(item.q, r["reading"])
-            except ValueError as e:  # the key itself is the problem
-                raise ManifestError(f"{item.assignment} {item.question}: {e}") from None
+            k = (item.assignment, item.question, r["reading"])
+            if k not in self._checked:  # SymPy is slow, and this runs after every standard call
+                try:
+                    self._checked[k] = checks.score(item.q, r["reading"])
+                except ValueError as e:  # the key itself is the problem
+                    raise ManifestError(f"{item.assignment} {item.question}: {e}") from None
+            chk = self._checked[k]
             return {"points": chk.points, "source": "code", "reason": chk.reason}
         g = (item.assignment, item.question, r["normalized"])
         j = s["groups"].get(g)
@@ -237,20 +255,25 @@ class Pipeline:
         """(call type, item, request key) for every call that can be sent now."""
         out = []
         groups = set()
+        unread = set()   # questions with a crop whose read is still to come
         for it in items:
             r = s["readings"].get((it.crop_id, "read"))
             if r is None:
                 key = request_key("read", it)
                 if it.needs_read and not self._blocked(key, s):
                     out.append(("read", it, key))
+                    unread.add((it.assignment, it.question))
                 continue
             if r["illegible"]:
                 continue
             if it.qtype == "rubric":
-                # One call per group of identical answers, made on its first crop.
+                # One call per group of identical answers, made on its first
+                # crop: which one that is is known only once every earlier
+                # crop of the question has been read.
                 g = (it.assignment, it.question, r["normalized"])
                 key = request_key("rubric", it)
-                if (g not in groups and g not in s["rulings"] and g not in s["groups"]
+                if (g not in groups and (it.assignment, it.question) not in unread
+                        and g not in s["rulings"] and g not in s["groups"]
                         and s["group_status"].get(g) not in TERMINAL and not self._blocked(key, s)):
                     out.append(("rubric", it, key))
                 groups.add(g)
@@ -396,14 +419,124 @@ class Pipeline:
                        outcome.key, now))
         return status
 
-    def _send_standard(self, plan, s, summary):
-        for call_type, it, key in plan:
-            params, _ = self._params(call_type, it, s, None)
-            meta = self._meta(call_type, it)
-            outcome = self.transport.create(key, params, meta)
-            with self.conn:
-                self.apply(outcome, call_type, it, s)
-            summary.calls[call_type] += 1
+    def _send_standard(self, items, summary):
+        """Send every call the run needs through the standard API, up to
+        api.concurrency at a time, storing each result as it comes back.
+        Whenever a result is stored, the calls it makes possible are planned
+        (a crop's verify after its read), so crops move through the passes
+        independently. A progress line per pass goes out at least every
+        PROGRESS_SECONDS.
+
+        Ctrl-C stops sending: the calls in flight are waited for and stored,
+        then KeyboardInterrupt propagates, and a rerun sends only what is
+        missing. A second Ctrl-C abandons the calls still in flight. An error
+        that stops the run (a bad request, or a 5xx after its retries) does
+        the same as the first Ctrl-C, then is raised."""
+        api = self.cfg.api
+        limiter = standard.Limiter(api.concurrency)
+        workers = standard.Workers(api.concurrency, lambda key, params, meta: standard.send(
+            self.transport, limiter, key, params, meta, sleep=self.sleep, max_retries=api.max_retries,
+            note=workers.note))
+        progress = standard.Progress(self.out, self.clock)
+        inflight = {}            # request key -> (call type, item)
+        error, announced = None, False
+        self.out(f"sending through the standard API, up to {limiter.limit} calls at a time")
+        for hint in self.on_stop:
+            self.out("  " + hint)
+        s = self._state()
+        with standard.Interrupts() as ctrl_c:
+            try:
+                while True:
+                    plan = [p for p in self.pending(items, s) if p[2] not in inflight]
+                    plan.sort(key=lambda p: PASS_ORDER[p[0]])
+                    while plan and not (ctrl_c.requested or error) and len(inflight) < limiter.limit:
+                        call_type, it, key = plan.pop(0)
+                        params, _ = self._params(call_type, it, s, None)
+                        inflight[key] = (call_type, it)
+                        if call_type == "rubric":
+                            self._groups_sent.add(self._group(it, s))
+                        workers.submit(key, params, self._meta(call_type, it))
+                    remaining = self._remaining(items, s, plan, inflight)
+                    progress.update(remaining)
+                    if not inflight:
+                        break
+                    if (ctrl_c.requested or error) and not announced:
+                        limiter.stop()  # what hasn't gone out yet stays unsent
+                        why = "stopping" if ctrl_c.requested else f"stopping ({error})"
+                        self.out(f"{why}: waiting for the {limiter.active} calls already sent"
+                                 + (" (Ctrl-C again to abandon them)" if ctrl_c.requested else ""))
+                        announced = True
+                    got = workers.get(progress.timeout())
+                    if got is None:
+                        continue
+                    kind, key, value = got
+                    if kind == "note":
+                        self.out(value)
+                        continue
+                    call_type, it = inflight.pop(key)
+                    if kind == "error":
+                        error = error or value
+                        continue
+                    if value is None:  # stopped before it went out
+                        continue
+                    with self.conn:
+                        status = self.apply(value, call_type, it, s)
+                    summary.calls[call_type] += 1
+                    model = (value.message or {}).get("model")
+                    progress.returned(call_type, status == "ok", value.message and costs.dollars(
+                        self.cfg.prices, model, "standard", costs.usage_of(value.message)))
+                    s = self._state()
+            finally:
+                limiter.stop()
+                workers.close()
+        if error is None and not ctrl_c.requested:
+            progress.end()
+            return
+        progress.stopped(remaining)
+        if error is not None:
+            raise error
+        if ctrl_c.requested:
+            self._finish(items, summary)
+            raise KeyboardInterrupt
+
+    def _group(self, it, s):
+        return (it.assignment, it.question, s["readings"][(it.crop_id, "read")]["normalized"])
+
+    def _remaining(self, items, s, plan, inflight) -> dict:
+        """Calls of each pass in flight or still to come, as far as is known
+        now. Besides the calls planned, a crop whose read is still to come
+        will probably need a verify, and a rubric call if it is a rubric item
+        (an overcount: its answer may share a group); a rubric crop that has
+        been read waits on its group's call, and then needs a verify."""
+        out = {p: 0 for p in PASS_ORDER}
+        for call_type, _ in inflight.values():
+            out[call_type] += 1
+        for call_type, _, _ in plan:
+            out[call_type] += 1
+        planned = {self._group(it, s) for call_type, it, _ in plan if call_type == "rubric"}
+        flying = {self._group(it, s) for call_type, it in inflight.values() if call_type == "rubric"}
+        waiting = set()
+        for it in items:
+            r = s["readings"].get((it.crop_id, "read"))
+            if r is None:
+                if it.needs_read and not self._blocked(request_key("read", it), s):
+                    out["verify"] += 1
+                    out["rubric"] += it.qtype == "rubric"
+                continue
+            if r["illegible"] or it.qtype != "rubric":
+                continue
+            first = self.first_score(it, s)
+            if first["points"] is not None or first["reason"] is not None:
+                continue
+            g = self._group(it, s)
+            if g in self._groups_sent and g not in flying:
+                continue  # its group's call failed: nothing more for this crop in this run
+            if it.crop_id not in s["corrected"]:
+                out["verify"] += 1
+            if g not in planned and g not in flying:
+                waiting.add(g)
+        out["rubric"] += len(waiting)
+        return out
 
     def _meta(self, call_type, it):
         return {"call_type": call_type, "crop_id": it.crop_id, "tracking_id": it.tracking_id,
@@ -535,19 +668,20 @@ class Pipeline:
                     other = self.estimate(items, s, "standard" if mode == "batch" else "batch")
                 self._guard(est, len(todo), other)
 
-        while True:
+        if mode == "standard" and self.pending(items, self._state()):
+            self._send_standard(items, summary)
+        while mode == "batch":
             s = self._state()
             plan = self.pending(items, s)
             if not plan:
                 break
-            if mode == "batch":
-                if not self._send_batch(plan, s, summary, by_crop):
-                    break
-                if self._canceled_while_waiting():
-                    break
-            else:
-                self._send_standard(plan, s, summary)
-        return self._finish(items, summary)
+            if not self._send_batch(plan, s, summary, by_crop):
+                break
+            if self._canceled_while_waiting():
+                break
+        summary = self._finish(items, summary)
+        self.transport.finish(summary.waiting == 0 and summary.batch_pending is None)
+        return summary
 
     def _canceled_while_waiting(self) -> bool:
         """`grading batch cancel` ran while this run waited on its batch: stop

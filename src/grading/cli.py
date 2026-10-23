@@ -141,6 +141,12 @@ def _waiting_hints(args, *words, workdir=None):
             f"To stop waiting: Ctrl-C, `{cancel}`, then `{_command(args, *words, *where, now=True)}`."], cancel
 
 
+def _stop_hints(args, *words, workdir=None):
+    where = ["--workdir", str(workdir)] if workdir is not None else []
+    return [f"Ctrl-C stops cleanly: what came back is kept, and `{_command(args, *words, *where, now=args.now)}` "
+            "sends the rest."]
+
+
 def _pending(e, cancel, now_cmd, wait_cmd):
     if e.status == "canceling":
         return f"{e}: `{cancel}` waits for it to end and stores what it finished, then rerun `{now_cmd}`"
@@ -169,7 +175,7 @@ def cmd_read(cfg, args):
     try:
         first_call_id = conn.execute("SELECT coalesce(max(id), 0) FROM api_calls").fetchone()[0]
         pipeline = Pipeline(cfg, conn, transport, confirm=_confirm(args), wait=not args.no_wait,
-                            force_mode=_force_mode(args), on_wait=hints)
+                            force_mode=_force_mode(args), on_wait=hints, on_stop=_stop_hints(args, "read"))
         try:
             summary = pipeline.run(args.assignment)
         except BatchPending as e:
@@ -197,7 +203,8 @@ def cmd_eval(cfg, args):
     hints, cancel = _waiting_hints(args, *words, workdir=workdir)
     try:
         report = evaluate.run(cfg, transport, Path(args.set), workdir, confirm=_confirm(args),
-                              force_mode=_force_mode(args), on_wait=hints)
+                              force_mode=_force_mode(args), on_wait=hints,
+                              on_stop=_stop_hints(args, *words, workdir=workdir))
     except BatchPending as e:
         where = ["--workdir", str(workdir)]
         now_cmd, wait_cmd = _command(args, *words, *where, now=True), _command(args, *words, *where)

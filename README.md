@@ -66,7 +66,7 @@ Edit the config:
 | `paths.data` | `grading.sqlite`, the page images and the crops |
 | `paths.roster` | `roster-map.csv`. Only `grading report` reads it. |
 | `[ingest]` | Thresholds; the defaults are explained in `config.example.toml` |
-| `[api]` | Models, effort, the batch threshold, the cost ceiling |
+| `[api]` | Models, effort, the batch threshold, standard calls in flight at once (`concurrency`), the cost ceiling |
 | `[prices]` | Dollars per million tokens, for the estimate and the report |
 
 The API key lives in the macOS Keychain. Add it once (it prompts for the key):
@@ -219,6 +219,35 @@ hours at 0 of 95 done. So use `--now` for any run you are waiting on, and
 the Batch API (the default for a class set, or `--batch`) for a run that can
 go overnight, with `--no-wait`.
 
+**Through the standard API.** Up to `api.concurrency` calls (default 8) are
+in flight at once. A crop's rubric and verify calls go out as soon as its
+read is stored, while other crops are still being read; a rubric call shared
+by identical answers waits until every earlier crop of that question has
+been read, so it is made on the same crop, with the same request, as one
+call at a time would make it. The rows stored, the recording and the eval
+report are the same whatever the order the calls come back in.
+
+- **Rate limits.** A 429 or an overloaded error (529) is not retried inside
+  the SDK. The run waits out the response's `retry-after` (1, 2, 4 … up to
+  60 seconds when there is none), sends the call again, and halves the calls
+  in flight for the rest of the run, down to one. A call still rate limited
+  after 10 tries is left for the next run. A connection error or a 5xx is
+  sent again up to `api.max_retries` times, then stops the run.
+- **Progress.** Every pass prints a line at least every 15 seconds, and a
+  final one when it is done:
+
+  ```
+  read: 41 of 95 done, 0 failed, 1m 52s, $0.83 so far
+  ```
+
+  The total is what is done plus what is still to come as far as is known:
+  until the reads are in, each rubric crop counts a rubric call, so the
+  rubric and verify totals only come down.
+- **Ctrl-C** stops cleanly: nothing new is sent, the calls already sent are
+  waited for and stored, and the run says which command picks it up (for an
+  eval, with its `--workdir`). That command sends only what is missing. A
+  second Ctrl-C stops without waiting for the calls in flight.
+
 **Batches.** The work runs in rounds (the reads; then the rubric calls and the choice and
 short verifies; then the rubric verifies), one batch per round. The batch id
 is stored in `batches`, so if the command is interrupted, or run with
@@ -272,6 +301,14 @@ replaced by its SHA-256) and response to `DIR/calls/<request id>.json`.
 reports any request that has changed since the recording (a prompt or a
 crop). `grading read --record` refuses a folder inside a git work tree: a
 recording of real papers holds student work.
+
+Each call's file is written the moment it returns. `recording.json` marks the
+recording incomplete while a run is going and complete only when a run ends
+with nothing left to send, so a run cut short (Ctrl-C, a crash, a call left
+for the next run) leaves a usable recording: replaying it answers the calls
+it made and leaves the rest waiting, where a complete recording would report
+each missing call as an error. Rerunning with the same `--record` folder
+(and, for an eval, the same `--workdir`) adds the rest to it.
 
 ## Review
 
@@ -471,12 +508,32 @@ pytest
   - a rerun sends nothing and keeps review decisions.
 - **Record and replay**: a recorded run replays to the same report with no
   API client created; a changed prompt is flagged.
+- **Concurrent standard calls** (`test_concurrent.py`), against the fake
+  client:
+  - the concurrency limit is honored (1, 3 and 8 calls in flight);
+  - eight at a time gives the same database rows, recording files and eval
+    report as one at a time;
+  - a crop's rubric and verify calls go out only once its read is stored
+    (checked from a second connection), while later crops are still read;
+  - a storm of 24 429s recovers: the limit halves to 4, 2, then 1, the
+    Retry-After holds calls back, and the report matches a calm run; a call
+    still limited after its retries is left for the next run;
+  - shuffling the rows of every table the report reads leaves it unchanged;
+  - a progress line per pass at least every 15 seconds, even while no call
+    returns, with totals that only come down and one final line each;
+  - Ctrl-C (a real SIGINT) keeps every call that came back and sends nothing
+    more; the rerun sends exactly the rest, and ends at the uninterrupted
+    report; the cut-short recording holds exactly those calls, replays
+    without error, and is complete after the rerun; `grading eval --now`
+    resumes from its `--workdir`.
 - **Cost guard**: the estimate, the confirmation (declining sends nothing)
   and the ceiling.
 - **The live transport**, through the real SDK against a mocked HTTP layer:
   strict tools, `tool_choice` auto, the cache breakpoint, the refusal
   fallback, batch submission, results (canceled ones included) and cancel;
-  and the Keychain lookup.
+  a 429 comes back with its `retry-after` (seconds, milliseconds or a date)
+  after one request, a 529 is a rate limit too, a 5xx may be retried; and
+  the Keychain lookup.
 - **Review** (`test_review.py`, `test_webapp.py`), on the class set graded
   by the fake client:
   - the queue's order: disagreements and low confidence, then rubric items

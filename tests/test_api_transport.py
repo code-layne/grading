@@ -184,3 +184,51 @@ def test_keychain_miss_falls_back_to_the_environment(monkeypatch):
     monkeypatch.setattr(apiclient.subprocess, "run", not_found)
     monkeypatch.setenv("ANTHROPIC_API_KEY", "from-env")
     assert apiclient.api_key("anthropic-grading") == "from-env"
+
+
+def failing(status, headers=None, kind="rate_limit_error"):
+    seen = []
+
+    def respond(request):
+        seen.append(request)
+        return httpx2.Response(status, headers=headers or {}, json={"type": "error", "error": {
+            "type": kind, "message": "slow down"}})
+    t = AnthropicTransport(config.ApiSettings(), key=KEY, http_client=anthropic.DefaultHttpxClient(
+        transport=httpx2.MockTransport(respond)))
+    return t, seen
+
+
+def test_a_429_comes_back_with_its_retry_after_and_is_not_retried_inside_the_sdk():
+    t, seen = failing(429, {"retry-after": "7"})
+    with pytest.raises(apiclient.RateLimited, match=r"rate limited \(429\)") as e:
+        t.create("read-a", params(), {})
+    assert e.value.retry_after == 7.0 and len(seen) == 1
+    t, _ = failing(429, {"retry-after-ms": "1500", "retry-after": "2"})
+    with pytest.raises(apiclient.RateLimited) as e:
+        t.create("read-a", params(), {})
+    assert e.value.retry_after == 1.5
+
+
+def test_overloaded_is_a_rate_limit_and_a_5xx_may_be_retried():
+    t, seen = failing(529, kind="overloaded_error")
+    with pytest.raises(apiclient.RateLimited, match=r"overloaded \(529\)") as e:
+        t.create("read-a", params(), {})
+    assert e.value.retry_after is None and len(seen) == 1
+    t, seen = failing(500, kind="api_error")
+    with pytest.raises(apiclient.Retryable) as e:
+        t.create("read-a", params(), {})
+    assert not isinstance(e.value, apiclient.RateLimited) and len(seen) == 1
+    t, _ = failing(400, kind="invalid_request_error")
+    with pytest.raises(apiclient.ApiError) as e:
+        t.create("read-a", params(), {})
+    assert not isinstance(e.value, apiclient.Retryable)
+
+
+def test_retry_after_reads_seconds_milliseconds_and_dates():
+    import email.utils
+    import datetime as dt
+    assert apiclient.retry_after({"retry-after": "3"}) == 3.0
+    assert apiclient.retry_after({"retry-after-ms": "250"}) == 0.25
+    when = email.utils.format_datetime(dt.datetime.now(dt.timezone.utc) + dt.timedelta(seconds=30))
+    assert 25 < apiclient.retry_after({"retry-after": when}) <= 30
+    assert apiclient.retry_after({}) is None and apiclient.retry_after({"retry-after": "soon"}) is None

@@ -99,23 +99,30 @@ class Estimate:
 
 def spent(conn, prices, after_id=0) -> dict:
     """Tokens and dollars by call type from the api_calls table (the calls
-    after api_calls.id after_id)."""
+    after api_calls.id after_id). Tokens are summed per model and API before
+    they are priced, so the dollars don't depend on the order of the rows
+    (concurrent standard calls are stored in the order they come back)."""
     rows = conn.execute("SELECT * FROM api_calls WHERE id > ?", (after_id,)).fetchall()
-    out = {t: {"calls": 0, "input_tokens": 0, "output_tokens": 0, "cache_write_5m_tokens": 0,
-               "cache_write_1h_tokens": 0, "cache_read_tokens": 0, "usd": 0.0, "unpriced": 0}
-           for t in CALL_TYPES}
+    kinds = ("input_tokens", "output_tokens", "cache_write_5m_tokens", "cache_write_1h_tokens", "cache_read_tokens")
+    out = {t: {"calls": 0, **{k: 0 for k in kinds}, "usd": 0.0, "unpriced": 0} for t in CALL_TYPES}
+    groups = {}   # (call type, model, mode) -> summed usage
     for r in rows:
         o = out[r["call_type"]]
         o["calls"] += 1
-        usage = {k: r[k] for k in ("input_tokens", "output_tokens", "cache_write_5m_tokens",
-                                   "cache_write_1h_tokens", "cache_read_tokens")}
+        usage = {k: r[k] for k in kinds}
         for k, v in usage.items():
             o[k] += v
-        d = dollars(prices, r["model"], r["mode"], usage) if any(usage.values()) else 0.0
+        if any(usage.values()):
+            g = groups.setdefault((r["call_type"], r["model"] or "", r["mode"]), {k: 0 for k in kinds} | {"n": 0})
+            g["n"] += 1
+            for k, v in usage.items():
+                g[k] += v
+    for (call_type, model, mode), g in sorted(groups.items()):
+        d = dollars(prices, model, mode, g)
         if d is None:
-            o["unpriced"] += 1
+            out[call_type]["unpriced"] += g["n"]
         else:
-            o["usd"] += d
+            out[call_type]["usd"] += d
     return out
 
 
