@@ -32,6 +32,16 @@ BOX_RULE_PT = 0.6       # \gradingboxrule
 STRIP_BLEED_PT = 4.0    # blank this much beyond the strip on every side
 
 QR_RE = re.compile(r"^(?P<assignment>[^|\s]+)\|(?P<page>[1-9][0-9]*)\|(?P<tid>[A-Z0-9]{6}|MASTER)$")
+# A cover sheet, COVER|assignment|tracking id: the only sheet with the
+# student's name. Same QR position and size as a graded page, no registration
+# marks. Any code starting COVER| counts, so an odd tail (a MASTER cover)
+# can't send a page with a name to the unplaced queue, stored.
+COVER_RE = re.compile(r"^COVER\|")
+
+
+class CoverPage(Exception):
+    """A cover sheet went through the scanner. It carries a name, so nothing
+    about it is kept: not the image, not the decoded text."""
 
 
 class PlacementError(Exception):
@@ -54,6 +64,11 @@ class Code:
 
 
 # ── Rendering and thresholds ──────────────────────────────────────────────────
+
+def page_count(pdf_path) -> int:
+    with pymupdf.open(pdf_path) as doc:
+        return doc.page_count
+
 
 def render_pages(pdf_path, dpi: int):
     """Yield each page of a scanned PDF as a grayscale array at dpi."""
@@ -96,10 +111,15 @@ def decode_codes(gray: np.ndarray, threshold: int) -> list[Code]:
     Thresholding first removes show-through: a mirrored ghost of the other
     side's QR code never reaches the ink threshold, so it can't be decoded.
     Which code belongs to the page is still decided by position (place_page).
+
+    A cover sheet's code anywhere on the page raises CoverPage, whatever else
+    is on it: a page that shows a cover could show its name.
     """
     codes = []
     for b in zxingcpp.read_barcodes(binarized(gray, threshold), formats=zxingcpp.BarcodeFormat.QRCode,
                                     try_invert=False):
+        if COVER_RE.match(b.text.strip()):
+            raise CoverPage()
         m = QR_RE.match(b.text.strip())
         if not m:
             continue
@@ -227,7 +247,7 @@ def align(gray, layout, dpi, threshold, max_residual):
 def place_page(gray: np.ndarray, manifests, settings) -> Placement:
     """Read the page's QR code, align the page to its manifest and blank the
     name strip. Raises PlacementError for anything that belongs in the
-    unplaced queue."""
+    unplaced queue, and CoverPage for a cover sheet."""
     dpi, thr = settings.dpi, settings.ink_threshold
     s = dpi / 72.0
     codes = decode_codes(gray, thr)

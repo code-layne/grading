@@ -309,7 +309,7 @@ const COUNT = {{ groups|length }}, I = {{ i }};
   <h2>Page #{{ p.id }} <span class="muted">{{ p.reason }}</span></h2>
   <p class="ink2">Scan #{{ p.scan_id }} (ingested {{ p.ingested_at }}, {{ p.page_count }} pages), page {{ p.scan_page }}, received {{ p.received_on }}.
      {% if p.detail %}<br>{{ p.detail }}{% endif %}<br>
-     The name strip is blanked: find this page in the paper stack (or with <code>grading status</code>, which names the scan file), and its tracking id in roster-map.csv.</p>
+     The strip is blanked: find this page in the paper stack (or with <code>grading status</code>, which names the scan file) and read the tracking id off its strip; a packet printed before cover sheets shows a name there instead, so look it up in roster-map.csv.</p>
   <div class="row">
     <div><label for="assignment">Assignment</label>
       <select id="assignment">{% for a in assignments %}<option value="{{ a.assignment }}" data-pages="{{ a.pages }}">{{ a.assignment }}</option>{% endfor %}</select></div>

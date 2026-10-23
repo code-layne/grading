@@ -17,7 +17,7 @@ it, and MIGRATIONS[n] takes a database from version n - 1 to n.
 import sqlite3
 from pathlib import Path
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -50,7 +50,7 @@ CREATE TABLE IF NOT EXISTS questions (
     PRIMARY KEY (assignment, question)
 );
 
--- One row per scanned PDF. The PDF itself is never stored: its pages carry names.
+-- One row per scanned PDF. The PDF itself is never stored: its cover sheets carry names.
 CREATE TABLE IF NOT EXISTS scans (
     id          INTEGER PRIMARY KEY,
     sha256      TEXT NOT NULL UNIQUE,
@@ -291,6 +291,13 @@ INSERT INTO batches_v4 (id, submitted_at, request_keys, status, collected_at)
     SELECT id, submitted_at, request_keys, status, collected_at FROM batches;
 DROP TABLE batches;
 ALTER TABLE batches_v4 RENAME TO batches;
+""",
+    # Cover sheets.
+    5: """
+-- Pages of the scan not stored at all, as JSON [{"scan_page": n, "reason":
+-- "cover"}]: a cover sheet carries the student's name, so nothing else
+-- about it is kept, not even its QR code's text.
+ALTER TABLE scans ADD COLUMN skipped_pages TEXT;
 """,
 }
 
